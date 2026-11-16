@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>RC BEYOND TOGETHER: GALACTIC FLEET</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -1766,7 +1766,7 @@
               </div>
             </div>
             <div class="md:col-span-4 flex flex-col items-center justify-center bg-white/95 text-slate-950 rounded-2xl p-4 shadow-xl">
-              <canvas id="hostQrCanvas" width="156" height="156" class="rounded-lg"></canvas>
+              <div id="hostQrBox" class="w-[156px] h-[156px] flex items-center justify-center rounded-lg overflow-hidden bg-white"></div>
               <div class="text-xs font-extrabold mt-2 text-slate-900">สแกน QR เพื่อเข้าเล่นเกม</div>
               <div class="text-[11px] font-mono text-slate-600 break-all text-center mt-0.5">รหัสห้อง: ${st.room_code}</div>
             </div>
@@ -1850,22 +1850,29 @@
     }
 
     function drawHostQr(roomCode) {
-      const canvas = document.getElementById('hostQrCanvas');
-      if (!canvas) return;
+      const box = document.getElementById('hostQrBox');
+      if (!box) return;
       const base = window.location.origin && window.location.origin !== 'null'
         ? `${window.location.origin}${window.location.pathname}`
-        : 'https://rc-galactic-fleet.app/';
+        : 'https://rc-galaxy-game-y1kl.onrender.com/';
       const url = `${base}?room=${encodeURIComponent(roomCode)}`;
-      if (window.QRCode && typeof window.QRCode.toCanvas === 'function') {
-        window.QRCode.toCanvas(canvas, url, { width: 156, margin: 1 }, () => {});
+      box.innerHTML = '';
+      if (typeof window.QRCode === 'function') {
+        new window.QRCode(box, {
+          text: url,
+          width: 152,
+          height: 152,
+          colorDark: '#050816',
+          colorLight: '#ffffff',
+          correctLevel: window.QRCode.CorrectLevel.M
+        });
       } else {
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, 156, 156);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 12px Prompt, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`ROOM: ${roomCode}`, 78, 82);
+        const img = document.createElement('img');
+        img.src = `https://api.qrserver.com/v1/create-qr-code/?size=156x156&data=${encodeURIComponent(url)}`;
+        img.alt = `QR ${roomCode}`;
+        img.width = 156;
+        img.height = 156;
+        box.appendChild(img);
       }
     }
 
