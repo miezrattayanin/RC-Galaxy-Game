@@ -669,7 +669,9 @@
       targetTeamId: null,
       mobileBattleTab: 'target', // 'target' | 'own'
       winnerCelebrated: false,
-      lastClickCoords: null
+      lastClickCoords: null,
+      turnDeadlineMs: 0,
+      timeoutSentForTurn: null
     };
 
     // --- Random Fleet Generator ---
@@ -734,10 +736,11 @@
           room_code: code,
           phase: 'lobby',
           current_turn: null,
+          turn_deadline_ms: 0,
           winner: null,
           teams,
           team_order: TEAM_ORDER,
-          logs: [{ id: 1, message: `สร้างห้อง ${code} (โหมดจำลอง) พร้อมเข้าเล่นแล้ว`, type: 'system' }]
+          logs: [{ id: 1, message: `สร้างห้อง ${code} (โหมดจำลอง) รอ Host กดเริ่มเกม`, type: 'system' }]
         };
       },
       getPublicState(viewerTeam) {
@@ -754,6 +757,7 @@
           room_code: this.db.room_code,
           phase: this.db.phase,
           current_turn: this.db.current_turn,
+          turn_remaining_sec: this.db.phase === 'battle' && this.db.turn_deadline_ms ? Math.max(0, Number(((this.db.turn_deadline_ms - Date.now()) / 1000).toFixed(1))) : 0,
           winner: this.db.winner,
           viewer_team: viewerTeam,
           teams: teamsOut,
@@ -777,15 +781,7 @@
         t.ships = shipsArr;
         t.confirmed = true;
         this.db.logs.unshift({ id: Date.now(), message: `${t.name} ยืนยันกองยานพร้อมรบแล้ว`, type: 'confirm', shooter_team: teamId });
-        const allConfirmed = TEAM_ORDER.every(id => this.db.teams[id].confirmed);
-        if (allConfirmed) {
-          this.db.phase = 'battle';
-          this.db.current_turn = TEAM_ORDER[0];
-          this.db.logs.unshift({ id: Date.now() + 1, message: 'ครบทั้ง 5 ทีมแล้ว! เริ่มการต่อสู้ — เทิร์นแรก: ORANGE NOVA', type: 'system' });
-          this.scheduleBotTurnIfNeeded();
-        } else {
-          this.db.phase = 'placement';
-        }
+        this.db.phase = 'placement';
         return this.getPublicState(appState.myTeamId);
       },
       fillBotsAndStart() {
@@ -798,10 +794,27 @@
             this.db.logs.unshift({ id: Date.now() + Math.random(), message: `${t.name} (บอทจำลอง) ยืนยันกองยานแล้ว`, type: 'confirm', shooter_team: tid });
           }
         }
+        return this.startGame();
+      },
+      startGame() {
+        const confirmedIds = TEAM_ORDER.filter(id => this.db.teams[id].confirmed);
+        if (confirmedIds.length < 2) throw new Error('ต้องมีอย่างน้อย 2 ทีมที่ยืนยันกองยานจึงจะเริ่มเกมได้');
+        TEAM_ORDER.forEach(id => {
+          if (!this.db.teams[id].confirmed) this.db.teams[id].eliminated = true;
+        });
         this.db.phase = 'battle';
-        this.db.current_turn = TEAM_ORDER[0];
-        this.db.logs.unshift({ id: Date.now() + 2, message: 'ครบทั้ง 5 ทีมแล้ว! เริ่มการต่อสู้ — เทิร์นแรก: ORANGE NOVA', type: 'system' });
+        this.db.current_turn = confirmedIds[0];
+        this.db.turn_deadline_ms = Date.now() + 10000;
+        this.db.logs.unshift({ id: Date.now() + 2, message: `🚀 Host กดเริ่มเกมแล้ว (${confirmedIds.length} ทีม)! เทิร์นแรก: ${this.db.teams[confirmedIds[0]].name}`, type: 'system' });
         this.scheduleBotTurnIfNeeded();
+        return this.getPublicState(appState.myTeamId);
+      },
+      timeout() {
+        if (this.db.phase !== 'battle' || !this.db.current_turn) return this.getPublicState(appState.myTeamId);
+        const cur = this.db.teams[this.db.current_turn];
+        cur.bullets = Math.max(0, cur.bullets - 1);
+        this.db.logs.unshift({ id: Date.now(), message: `⏰ ${cur.name} หมดเวลา 10 วินาที! เสียกระสุน 1 นัด`, type: 'skip', shooter_team: cur.team_id });
+        this.advanceTurn(cur.team_id);
         return this.getPublicState(appState.myTeamId);
       },
       fire(shooterId, targetId, row, col) {
@@ -877,6 +890,7 @@
           const cand = TEAM_ORDER[(idx + off) % TEAM_ORDER.length];
           if (!this.db.teams[cand].eliminated) {
             this.db.current_turn = cand;
+            this.db.turn_deadline_ms = Date.now() + 10000;
             break;
           }
         }
@@ -918,6 +932,7 @@
             const pick = open[Math.floor(Math.random() * open.length)];
             const res = this.fire(turnTeam, targetId, pick.r, pick.c);
             appState.serverState = res.state;
+            syncTurnDeadline(res.state);
             if (res.isHit) SFX.play('hit'); else SFX.play('miss');
             render();
           }, 950);
@@ -968,6 +983,7 @@
       if (res.ok) {
         appState.serverState = await res.json();
         appState.myTeamId = appState.serverState.viewer_team;
+        syncTurnDeadline(appState.serverState);
         render();
       }
     }
@@ -1134,6 +1150,7 @@
         }
       } else {
         appState.serverState = DemoEngine.confirmFleet(appState.myTeamId, shipsPayload);
+        syncTurnDeadline(appState.serverState);
         SFX.play('place');
         showToast('ยืนยันกองยานสำเร็จ!', 'success');
         render();
@@ -1143,6 +1160,7 @@
     function handleDemoFillBots() {
       if (appState.mode !== 'demo') return;
       appState.serverState = DemoEngine.fillBotsAndStart();
+      syncTurnDeadline(appState.serverState);
       SFX.play('place');
       showToast('จำลองครบ 5 ทีมแล้ว เริ่มการต่อสู้!', 'success');
       render();
@@ -1195,6 +1213,7 @@
           const data = await res.json();
           if (!res.ok) { showToast(data.detail || 'ยิงไม่สำเร็จ', 'error'); return; }
           appState.serverState = data.state;
+          syncTurnDeadline(data.state);
           if (data.result.is_hit) {
             SFX.play('hit');
             spawnExplosion(fxX, fxY, TEAMS_CONFIG[targetId].accent, 34);
@@ -1212,6 +1231,7 @@
         try {
           const res = DemoEngine.fire(appState.myTeamId, targetId, row, col);
           appState.serverState = res.state;
+          syncTurnDeadline(res.state);
           if (res.isHit) {
             SFX.play('hit');
             spawnExplosion(fxX, fxY, TEAMS_CONFIG[targetId].accent, 34);
@@ -1242,9 +1262,85 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'ไม่สามารถข้ามเทิร์นได้', 'error'); return; }
         appState.serverState = data.state;
+        syncTurnDeadline(data.state);
         render();
       } else {
         appState.serverState = DemoEngine.skip(appState.myTeamId);
+        syncTurnDeadline(appState.serverState);
+        render();
+      }
+    }
+
+    function syncTurnDeadline(st) {
+      if (st && st.phase === 'battle') {
+        const rem = typeof st.turn_remaining_sec === 'number' ? st.turn_remaining_sec : 10;
+        appState.turnDeadlineMs = Date.now() + rem * 1000;
+        appState.timeoutSentForTurn = null;
+      } else {
+        appState.turnDeadlineMs = 0;
+      }
+    }
+
+    async function handleStartGame() {
+      SFX.init();
+      if (appState.mode === 'live') {
+        try {
+          const res = await fetch('/api/room/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room_code: appState.roomCode })
+          });
+          const data = await res.json();
+          if (!res.ok) { showToast(data.detail || 'ไม่สามารถเริ่มเกมได้', 'error'); return; }
+          appState.serverState = data.state;
+          syncTurnDeadline(data.state);
+          SFX.play('place');
+          showToast('🚀 เริ่มการต่อสู้แล้ว!', 'success');
+          render();
+        } catch (e) {
+          showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+      } else {
+        try {
+          appState.serverState = DemoEngine.startGame();
+          syncTurnDeadline(appState.serverState);
+          SFX.play('place');
+          showToast('🚀 เริ่มการต่อสู้แล้ว!', 'success');
+          render();
+        } catch (e) {
+          showToast(e.message, 'warn');
+        }
+      }
+    }
+
+    async function handleTurnTimeout() {
+      const st = appState.serverState;
+      if (!st || st.phase !== 'battle' || !st.current_turn) return;
+      const turnKey = `${st.current_turn}_${Math.floor(appState.turnDeadlineMs / 1000)}`;
+      if (appState.timeoutSentForTurn === turnKey) return;
+      appState.timeoutSentForTurn = turnKey;
+
+      if (appState.mode === 'live') {
+        try {
+          const res = await fetch('/api/battle/timeout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ room_code: appState.roomCode })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.changed) {
+              SFX.play('miss');
+              appState.serverState = data.state;
+              syncTurnDeadline(data.state);
+              render();
+            }
+          }
+        } catch (e) {}
+      } else {
+        SFX.play('miss');
+        appState.serverState = DemoEngine.timeout();
+        syncTurnDeadline(appState.serverState);
         render();
       }
     }
@@ -1486,7 +1582,7 @@
         <main class="flex-1 max-w-6xl mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 flex flex-col gap-5">
           <!-- Team Readiness Strip -->
           <section class="glass-panel rounded-2xl p-3.5 border border-slate-700/50">
-            <div class="text-xs font-bold text-slate-300 mb-2">สถานะความพร้อมของทั้ง 5 ทีม (ครบ 5 ทีมเริ่มเกมอัตโนมัติ)</div>
+            <div class="text-xs font-bold text-slate-300 mb-2">สถานะความพร้อมของทีม (รอ Host กด Start เพื่อเริ่มเกม — ไม่จำเป็นต้องครบ 5 ทีม)</div>
             <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
               ${TEAM_ORDER.map(tid => {
                 const cfg = TEAMS_CONFIG[tid];
@@ -1518,7 +1614,7 @@
 
               ${isConfirmed ? `
                 <div class="p-4 rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 text-sm font-semibold">
-                  ✅ ยืนยันกองยานเรียบร้อยแล้ว! กำลังรอทีมอื่นยืนยันให้ครบทั้ง 5 ทีม...
+                  ✅ ยืนยันกองยานเรียบร้อยแล้ว! กำลังรอ Host กดปุ่ม Start เพื่อเริ่มเกม...
                 </div>
               ` : `
                 <!-- Ship Selector -->
@@ -1632,6 +1728,9 @@
             </div>
 
             <div class="w-full md:w-auto flex items-center gap-2.5 flex-wrap">
+              <div id="turnTimerBadge" class="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-sky-400/50 font-orbitron font-black text-sm text-sky-300 flex items-center gap-1.5">
+                ⏱️ <span id="turnTimerText">10</span>s
+              </div>
               <div class="flex-1 md:flex-none px-4 py-2 rounded-xl font-bold text-sm text-center ${isMyTurn ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 pulse-turn shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-slate-800/90 text-slate-200 border border-slate-700'}">
                 ${isMyTurn ? '🎯 ถึงเทิร์นของคุณ! เลือกเป้าหมายแล้วยิงเลย' : `⏳ กำลังรอทีม ${turnCfg ? turnCfg.name : '...'}`}
               </div>
@@ -1758,9 +1857,18 @@
                 <div class="px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-sm">
                   สถานะเกม: <strong class="text-amber-300">${st.phase === 'lobby' ? 'รอเลือกทีม' : st.phase === 'placement' ? 'กำลังวางยาน' : st.phase === 'battle' ? 'กำลังต่อสู้!' : 'จบเกมแล้ว'}</strong>
                 </div>
+                ${(st.phase === 'lobby' || st.phase === 'placement') ? (() => {
+                  const readyCnt = TEAM_ORDER.filter(id => st.teams[id].confirmed).length;
+                  return `<button id="hostStartBtn" ${readyCnt < 2 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg ${readyCnt >= 2 ? 'bg-gradient-to-r from-emerald-400 to-sky-400 text-slate-950 hover:brightness-110' : 'bg-slate-800 text-slate-400 cursor-not-allowed'}">
+                    🚀 Start Game (พร้อม ${readyCnt}/5 ทีม)
+                  </button>`;
+                })() : ''}
                 ${st.current_turn ? `
                   <div class="px-4 py-2 rounded-xl font-orbitron font-bold text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 shadow">
                     🎯 เทิร์นปัจจุบัน: ${TEAMS_CONFIG[st.current_turn].name}
+                  </div>
+                  <div id="hostTurnTimerBadge" class="px-4 py-2 rounded-xl bg-slate-900/90 border border-sky-400/60 font-orbitron font-black text-base text-sky-300">
+                    ⏱️ <span id="hostTurnTimerText">10</span>s
                   </div>
                 ` : ''}
               </div>
@@ -1917,6 +2025,7 @@
         appState.isHostView = !appState.isHostView;
         render();
       });
+      document.getElementById('hostStartBtn')?.addEventListener('click', handleStartGame);
       document.getElementById('resetGameBtn')?.addEventListener('click', handleResetGame);
       document.getElementById('winnerResetBtn')?.addEventListener('click', handleResetGame);
 
@@ -2033,6 +2142,29 @@
         window.removeEventListener('pointerdown', unlockAudio);
       };
       window.addEventListener('pointerdown', unlockAudio, { once: true });
+      setInterval(() => {
+        const st = appState.serverState;
+        if (!st || st.phase !== 'battle' || !appState.turnDeadlineMs) return;
+        const sec = Math.max(0, Math.ceil((appState.turnDeadlineMs - Date.now()) / 1000));
+        const t1 = document.getElementById('turnTimerText');
+        const b1 = document.getElementById('turnTimerBadge');
+        const t2 = document.getElementById('hostTurnTimerText');
+        const b2 = document.getElementById('hostTurnTimerBadge');
+        [t1, t2].forEach(el => { if (el) el.textContent = sec; });
+        [b1, b2].forEach(el => {
+          if (!el) return;
+          if (sec <= 3) {
+            el.classList.add('border-rose-500', 'text-rose-400', 'animate-pulse');
+            el.classList.remove('border-sky-400/50', 'border-sky-400/60', 'text-sky-300');
+          } else {
+            el.classList.remove('border-rose-500', 'text-rose-400', 'animate-pulse');
+            el.classList.add('border-sky-400/50', 'text-sky-300');
+          }
+        });
+        if (Date.now() >= appState.turnDeadlineMs) {
+          handleTurnTimeout();
+        }
+      }, 200);
     });
   </script>
 </body>
