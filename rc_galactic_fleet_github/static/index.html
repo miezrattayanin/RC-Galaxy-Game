@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>RC BEYOND TOGETHER: GALACTIC FLEET</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-space: #050816;
+      --bg-card: rgba(13, 19, 43, 0.78);
+      --border-glow: rgba(96, 165, 250, 0.25);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      font-family: 'Prompt', 'Inter', sans-serif;
+      background-color: var(--bg-space);
+      color: #f8fafc;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+    .font-orbitron { font-family: 'Orbitron', 'Prompt', sans-serif; }
+
+    /* Animated Space Nebula & Starfield */
+    .space-bg {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(14, 165, 233, 0.28), transparent 45%),
+        radial-gradient(circle at 85% 22%, rgba(56, 189, 248, 0.24), transparent 45%),
+        radial-gradient(circle at 78% 82%, rgba(255, 107, 0, 0.22), transparent 46%),
+        radial-gradient(circle at 20% 82%, rgba(255, 158, 0, 0.16), transparent 42%),
+        linear-gradient(180deg, #03091a 0%, #07152e 55%, #040917 100%);
+    }
+    #starfield {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+    }
+    #fxCanvas {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      pointer-events: none;
+    }
+
+    .glass-panel {
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .neon-text-cyan {
+      text-shadow: 0 0 12px rgba(0, 229, 255, 0.65), 0 0 28px rgba(0, 180, 216, 0.4);
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.72; transform: scale(1.03); }
+    }
+    .pulse-turn {
+      animation: pulseGlow 1.8s ease-in-out infinite;
+    }
+
+    @keyframes floatSlow {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-5px); }
+    }
+    .float-slow {
+      animation: floatSlow 3.6s ease-in-out infinite;
+    }
+
+    /* 8x8 Tactical Grid */
+    .tactical-grid {
+      display: grid;
+      grid-template-columns: 24px repeat(8, minmax(0, 1fr));
+      gap: 3px;
+      user-select: none;
+      position: relative;
+    }
+    .grid-header-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      height: 22px;
+    }
+    .grid-row-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .grid-cell {
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(71, 85, 105, 0.45);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      overflow: visible;
+    }
+    .grid-cell:hover {
+      border-color: rgba(56, 189, 248, 0.85);
+      background: rgba(30, 41, 59, 0.9);
+      z-index: 2;
+    }
+    .grid-cell.disabled-cell {
+      cursor: default;
+    }
+    .grid-cell.preview-valid {
+      background: rgba(16, 185, 129, 0.32) !important;
+      border-color: #34d399 !important;
+      box-shadow: inset 0 0 10px rgba(52, 211, 153, 0.45);
+    }
+    .grid-cell.preview-invalid {
+      background: rgba(239, 68, 68, 0.35) !important;
+      border-color: #f87171 !important;
+      box-shadow: inset 0 0 10px rgba(248, 113, 113, 0.45);
+    }
+    .grid-cell.shot-hit {
+      background: radial-gradient(circle, rgba(239, 68, 68, 0.45) 0%, rgba(127, 29, 29, 0.55) 100%) !important;
+      border-color: #f87171 !important;
+      box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.65);
+    }
+    .grid-cell.shot-miss {
+      background: rgba(30, 41, 59, 0.55) !important;
+      border-color: rgba(100, 116, 139, 0.5) !important;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.4); }
+    ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.5); border-radius: 999px; }
+  </style>
+</head>
+<body class="antialiased selection:bg-cyan-500/30 selection:text-white">
+  <div class="space-bg"></div>
+  <canvas id="starfield"></canvas>
+  <canvas id="fxCanvas"></canvas>
+
+  <!-- Toast Container -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-[70] flex flex-col gap-2 max-w-xs w-full pointer-events-none"></div>
+
+  <!-- Confirm Modal (In-page, never window.confirm) -->
+  <div id="confirmModal" class="hidden fixed inset-0 z-[80] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-panel rounded-2xl max-w-sm w-full p-6 border border-cyan-400/30">
+      <h3 id="confirmTitle" class="text-lg font-bold text-white mb-2">ยืนยันการดำเนินการ</h3>
+      <p id="confirmMessage" class="text-sm text-slate-300 mb-5"></p>
+      <div class="flex justify-end gap-3">
+        <button id="confirmCancelBtn" class="px-4 py-2 rounded-xl bg-slate-700/70 hover:bg-slate-600 text-sm font-semibold text-slate-200 transition">ยกเลิก</button>
+        <button id="confirmOkBtn" class="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 hover:brightness-110 text-sm font-bold text-white shadow-lg transition">ยืนยัน</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Root -->
+  <div id="app" class="min-h-screen flex flex-col"></div>
+
+  <script>
+    // =========================================================================
+    // 1. CONSTANTS, TEAM METADATA & SVG ARTWORK
+    // =========================================================================
+    const TEAM_ORDER = ['ORANGE_NOVA', 'PURPLE_PULSE', 'PINK_GALAXY', 'GREEN_ORBIT', 'BLUE_COMET'];
+    const TEAMS_CONFIG = {
+      ORANGE_NOVA: {
+        id: 'ORANGE_NOVA',
+        name: 'ORANGE NOVA',
+        thaiColor: 'ส้ม',
+        color: '#FF6B00',
+        accent: '#FF9E00',
+        glow: 'rgba(255, 107, 0, 0.65)',
+        bgGrad: 'linear-gradient(135deg, rgba(255,107,0,0.28), rgba(255,158,0,0.10))',
+        border: 'rgba(255, 138, 0, 0.75)',
+        badgeBg: 'rgba(255, 107, 0, 0.24)'
+      },
+      PURPLE_PULSE: {
+        id: 'PURPLE_PULSE',
+        name: 'PURPLE PULSE',
+        thaiColor: 'ม่วง',
+        color: '#9D4EDD',
+        accent: '#C77DFF',
+        glow: 'rgba(157, 78, 221, 0.55)',
+        bgGrad: 'linear-gradient(135deg, rgba(157,78,221,0.24), rgba(199,125,255,0.08))',
+        border: 'rgba(199, 125, 255, 0.65)',
+        badgeBg: 'rgba(157, 78, 221, 0.22)'
+      },
+      PINK_GALAXY: {
+        id: 'PINK_GALAXY',
+        name: 'PINK GALAXY',
+        thaiColor: 'ชมพู',
+        color: '#FF3E9D',
+        accent: '#FF75B5',
+        glow: 'rgba(255, 62, 157, 0.55)',
+        bgGrad: 'linear-gradient(135deg, rgba(255,62,157,0.24), rgba(255,117,181,0.08))',
+        border: 'rgba(255, 117, 181, 0.65)',
+        badgeBg: 'rgba(255, 62, 157, 0.22)'
+      },
+      GREEN_ORBIT: {
+        id: 'GREEN_ORBIT',
+        name: 'GREEN ORBIT',
+        thaiColor: 'เขียว',
+        color: '#00E676',
+        accent: '#38EF7D',
+        glow: 'rgba(0, 230, 118, 0.52)',
+        bgGrad: 'linear-gradient(135deg, rgba(0,230,118,0.22), rgba(56,239,125,0.08))',
+        border: 'rgba(0, 230, 118, 0.65)',
+        badgeBg: 'rgba(0, 230, 118, 0.2)'
+      },
+      BLUE_COMET: {
+        id: 'BLUE_COMET',
+        name: 'BLUE COMET',
+        thaiColor: 'ฟ้า',
+        color: '#0EA5E9',
+        accent: '#38BDF8',
+        glow: 'rgba(56, 189, 248, 0.65)',
+        bgGrad: 'linear-gradient(135deg, rgba(14,165,233,0.28), rgba(56,189,248,0.10))',
+        border: 'rgba(56, 189, 248, 0.75)',
+        badgeBg: 'rgba(14, 165, 233, 0.24)'
+      }
+    };
+
+    const SHIP_BLUEPRINTS = [
+      { id: 'flagship', name: 'Flagship', label: 'Flagship (4 ช่อง)', size: 4 },
+      { id: 'cruiser', name: 'Cruiser', label: 'Cruiser (3 ช่อง)', size: 3 },
+      { id: 'scout', name: 'Scout', label: 'Scout (2 ช่อง)', size: 2 },
+      { id: 'fighter_1', name: 'Fighter I', label: 'Fighter I (1 ช่อง)', size: 1 },
+      { id: 'fighter_2', name: 'Fighter II', label: 'Fighter II (1 ช่อง)', size: 1 }
+    ];
+
+    const GRID_SIZE = 8;
+    const HERO_IMG_SRC = "/static/hero.jpg";
+
+    function planetSvg(teamId, size = 36) {
+      const t = TEAMS_CONFIG[teamId];
+      const uid = teamId + '_' + Math.random().toString(36).slice(2, 6);
+      return `
+        <svg width="${size}" height="${size}" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="shrink-0">
+          <defs>
+            <radialGradient id="pg_${uid}" cx="35%" cy="30%" r="70%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+              <stop offset="30%" stop-color="${t.accent}"/>
+              <stop offset="100%" stop-color="${t.color}" stop-opacity="0.9"/>
+            </radialGradient>
+            <filter id="glow_${uid}" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <ellipse cx="32" cy="34" rx="28" ry="9" transform="rotate(-18 32 34)" stroke="${t.accent}" stroke-width="2.6" stroke-opacity="0.75" fill="none"/>
+          <circle cx="32" cy="32" r="16" fill="url(#pg_${uid})" filter="url(#glow_${uid})"/>
+          <path d="M18 28 C25 24, 38 25, 46 31" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+          <path d="M21 37 C28 34, 37 35, 43 39" stroke="#050816" stroke-opacity="0.25" stroke-width="2" stroke-linecap="round"/>
+          <path d="M8 42 C18 46, 46 37, 56 26" stroke="${t.accent}" stroke-width="3" stroke-linecap="round" stroke-opacity="0.95"/>
+          <circle cx="52" cy="14" r="2.2" fill="#fff"/>
+          <circle cx="12" cy="20" r="1.5" fill="${t.accent}"/>
+        </svg>
+      `;
+    }
+
+    // Sci-fi SVG ship rendered horizontally inside a viewBox of (size*100) x 100
+    function shipSvg(shipId, size, color, accent, isVertical = false, isDestroyed = false) {
+      const w = size * 100;
+      const h = 100;
+      const opacity = isDestroyed ? '0.6' : '1';
+      const gradId = `sg_${shipId}_${Math.random().toString(36).slice(2, 7)}`;
+
+      let hull = '';
+      if (size === 4) {
+        // Flagship Dreadnought
+        hull = `
+          <!-- Engine Thrusters -->
+          <ellipse cx="22" cy="36" rx="16" ry="8" fill="${accent}" opacity="0.85"/>
+          <ellipse cx="22" cy="64" rx="16" ry="8" fill="${accent}" opacity="0.85"/>
+          <ellipse cx="14" cy="50" rx="14" ry="10" fill="#ffffff" opacity="0.9"/>
+          <!-- Main Hull -->
+          <path d="M30 22 L95 14 L260 20 L368 42 L390 50 L368 58 L260 80 L95 86 L30 78 L44 50 Z"
+                fill="url(#${gradId})" stroke="${accent}" stroke-width="3.5" stroke-linejoin="round"/>
+          <!-- Wing Pylons -->
+          <path d="M120 18 L175 6 L220 19 Z" fill="${color}" stroke="${accent}" stroke-width="2.5"/>
+          <path d="M120 82 L175 94 L220 81 Z" fill="${color}" stroke="${accent}" stroke-width="2.5"/>
+          <!-- Command Bridge & Core -->
+          <rect x="145" y="34" width="95" height="32" rx="14" fill="#091026" stroke="${accent}" stroke-width="2.5"/>
+          <circle cx="192" cy="50" r="9" fill="${accent}"/>
+          <circle cx="192" cy="50" r="4.5" fill="#ffffff"/>
+          <!-- Energy Channels -->
+          <path d="M255 44 L345 47 M255 56 L345 53" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.85"/>
+          <circle cx="100" cy="50" r="6" fill="#38bdf8"/>
+        `;
+      } else if (size === 3) {
+        // Cruiser Warship
+        hull = `
+          <ellipse cx="18" cy="50" rx="15" ry="12" fill="${accent}" opacity="0.9"/>
+          <path d="M28 24 L105 16 L225 28 L286 50 L225 72 L105 84 L28 76 L45 50 Z"
+                fill="url(#${gradId})" stroke="${accent}" stroke-width="3.5" stroke-linejoin="round"/>
+          <path d="M85 18 L120 8 L155 21 Z" fill="${color}" stroke="${accent}" stroke-width="2"/>
+          <path d="M85 82 L120 92 L155 79 Z" fill="${color}" stroke="${accent}" stroke-width="2"/>
+          <ellipse cx="165" cy="50" rx="42" ry="14" fill="#091026" stroke="${accent}" stroke-width="2.5"/>
+          <circle cx="165" cy="50" r="7" fill="${accent}"/>
+          <path d="M218 46 L266 50 L218 54" stroke="#ffffff" stroke-width="2.2" fill="none" opacity="0.85"/>
+        `;
+      } else if (size === 2) {
+        // Scout Interceptor (2 cells)
+        hull = `
+          <ellipse cx="18" cy="50" rx="14" ry="10" fill="${accent}" opacity="0.9"/>
+          <path d="M26 26 L90 14 L188 50 L90 86 L26 74 L44 50 Z"
+                fill="url(#${gradId})" stroke="${accent}" stroke-width="3.5" stroke-linejoin="round"/>
+          <ellipse cx="108" cy="50" rx="28" ry="12" fill="#091026" stroke="${accent}" stroke-width="2.5"/>
+          <circle cx="108" cy="50" r="6" fill="#ffffff"/>
+          <path d="M142 45 L176 50 L142 55" stroke="${accent}" stroke-width="2.2" fill="none"/>
+        `;
+      } else {
+        // Fighter Drone (1 cell)
+        hull = `
+          <ellipse cx="16" cy="50" rx="10" ry="8" fill="${accent}" opacity="0.9"/>
+          <path d="M22 28 L46 14 L88 50 L46 86 L22 72 L34 50 Z"
+                fill="url(#${gradId})" stroke="${accent}" stroke-width="3.5" stroke-linejoin="round"/>
+          <circle cx="52" cy="50" r="10" fill="#091026" stroke="${accent}" stroke-width="2.5"/>
+          <circle cx="52" cy="50" r="4.5" fill="#ffffff"/>
+        `;
+      }
+
+      const transformStyle = isVertical
+        ? `transform: rotate(90deg) translateY(-100%); transform-origin: top left; width: ${h}px;`
+        : '';
+
+      return `
+        <svg viewBox="0 0 ${w} ${h}" class="w-full h-full drop-shadow-[0_0_8px_${color}]" style="opacity:${opacity};" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#0f172a"/>
+              <stop offset="45%" stop-color="${color}"/>
+              <stop offset="100%" stop-color="${accent}"/>
+            </linearGradient>
+          </defs>
+          ${hull}
+        </svg>
+      `;
+    }
+
+    // =========================================================================
+    // 2. WEB AUDIO SYNTHESIZER (SFX)
+    // =========================================================================
+    const SFX = {
+      muted: false,
+      bgmEnabled: true,
+      bgmRunning: false,
+      bgmTimer: null,
+      bgmStep: 0,
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) this.ctx = new AC();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+        if (this.bgmEnabled && !this.muted && !this.bgmRunning) {
+          this.startBgm();
+        }
+      },
+      startBgm() {
+        if (this.bgmRunning || !this.ctx || !this.bgmEnabled || this.muted) return;
+        this.bgmRunning = true;
+        // Upbeat cosmic synth arpeggio (A minor / C major space progression)
+        const bassNotes = [110, 110, 130.81, 130.81, 146.83, 146.83, 130.81, 98.0];
+        const arpNotes = [220, 261.63, 329.63, 392, 440, 392, 329.63, 261.63, 293.66, 349.23, 440, 523.25, 392, 329.63, 293.66, 246.94];
+        const tick = () => {
+          if (!this.bgmRunning || this.muted || !this.bgmEnabled || !this.ctx) return;
+          const now = this.ctx.currentTime;
+          const step = this.bgmStep++;
+
+          // Soft synth arp note
+          const arpOsc = this.ctx.createOscillator();
+          const arpGain = this.ctx.createGain();
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(1100, now);
+          arpOsc.type = 'triangle';
+          arpOsc.frequency.setValueAtTime(arpNotes[step % arpNotes.length], now);
+          arpGain.gain.setValueAtTime(0.038, now);
+          arpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          arpOsc.connect(filter);
+          filter.connect(arpGain);
+          arpGain.connect(this.ctx.destination);
+          arpOsc.start(now);
+          arpOsc.stop(now + 0.23);
+
+          // Bass pulse every 2 steps
+          if (step % 2 === 0) {
+            const bOsc = this.ctx.createOscillator();
+            const bGain = this.ctx.createGain();
+            bOsc.type = 'sine';
+            bOsc.frequency.setValueAtTime(bassNotes[Math.floor(step / 2) % bassNotes.length], now);
+            bGain.gain.setValueAtTime(0.055, now);
+            bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+            bOsc.connect(bGain);
+            bGain.connect(this.ctx.destination);
+            bOsc.start(now);
+            bOsc.stop(now + 0.4);
+          }
+        };
+        tick();
+        this.bgmTimer = setInterval(tick, 250);
+      },
+      stopBgm() {
+        this.bgmRunning = false;
+        if (this.bgmTimer) {
+          clearInterval(this.bgmTimer);
+          this.bgmTimer = null;
+        }
+      },
+      toggleBgm() {
+        this.bgmEnabled = !this.bgmEnabled;
+        if (this.bgmEnabled && !this.muted) {
+          this.init();
+          this.startBgm();
+        } else {
+          this.stopBgm();
+        }
+      },
+      play(type) {
+        if (this.muted) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        if (type === 'place') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(420, now);
+          osc.frequency.exponentialRampToValueAtTime(760, now + 0.09);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (type === 'hit') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.exponentialRampToValueAtTime(45, now + 0.35);
+          gain.gain.setValueAtTime(0.22, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+          osc.start(now);
+          osc.stop(now + 0.38);
+        } else if (type === 'miss') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(340, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.22);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+          osc.start(now);
+          osc.stop(now + 0.24);
+        } else if (type === 'win') {
+          [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.type = 'triangle';
+            o.connect(g);
+            g.connect(this.ctx.destination);
+            o.frequency.setValueAtTime(freq, now + i * 0.11);
+            g.gain.setValueAtTime(0.15, now + i * 0.11);
+            g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.11 + 0.4);
+            o.start(now + i * 0.11);
+            o.stop(now + i * 0.11 + 0.4);
+          });
+        }
+      }
+    };
+
+    // =========================================================================
+    // 3. PARTICLE FX & STARFIELD
+    // =========================================================================
+    const fxParticles = [];
+    function spawnExplosion(x, y, color = '#FF8C00', count = 28) {
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+        const speed = 1.8 + Math.random() * 5.2;
+        fxParticles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          decay: 0.018 + Math.random() * 0.02,
+          size: 2.5 + Math.random() * 4.5,
+          color: i % 3 === 0 ? '#ffffff' : color
+        });
+      }
+    }
+
+    function spawnConfetti(color = '#00E5FF') {
+      const w = window.innerWidth;
+      const colors = [color, '#FFB703', '#FF3E9D', '#00E676', '#C77DFF', '#ffffff'];
+      for (let i = 0; i < 80; i++) {
+        fxParticles.push({
+          x: Math.random() * w,
+          y: -10 - Math.random() * 120,
+          vx: (Math.random() - 0.5) * 3,
+          vy: 2 + Math.random() * 4,
+          life: 1,
+          decay: 0.005 + Math.random() * 0.005,
+          size: 4 + Math.random() * 5,
+          color: colors[i % colors.length]
+        });
+      }
+    }
+
+    function initCanvases() {
+      const starCanvas = document.getElementById('starfield');
+      const fxCanvas = document.getElementById('fxCanvas');
+      const sCtx = starCanvas.getContext('2d');
+      const fCtx = fxCanvas.getContext('2d');
+      let stars = [];
+
+      function resize() {
+        starCanvas.width = fxCanvas.width = window.innerWidth;
+        starCanvas.height = fxCanvas.height = window.innerHeight;
+        stars = Array.from({ length: 110 }, () => ({
+          x: Math.random() * starCanvas.width,
+          y: Math.random() * starCanvas.height,
+          r: Math.random() * 1.6 + 0.3,
+          alpha: Math.random() * 0.7 + 0.2,
+          twinkle: (Math.random() - 0.5) * 0.015
+        }));
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      function loop() {
+        sCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
+        for (const st of stars) {
+          st.alpha += st.twinkle;
+          if (st.alpha > 0.95 || st.alpha < 0.15) st.twinkle *= -1;
+          sCtx.fillStyle = `rgba(226, 232, 240, ${st.alpha.toFixed(2)})`;
+          sCtx.beginPath();
+          sCtx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+          sCtx.fill();
+        }
+
+        fCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+        for (let i = fxParticles.length - 1; i >= 0; i--) {
+          const p = fxParticles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.05;
+          p.life -= p.decay;
+          if (p.life <= 0) {
+            fxParticles.splice(i, 1);
+            continue;
+          }
+          fCtx.globalAlpha = Math.max(0, p.life);
+          fCtx.fillStyle = p.color;
+          fCtx.beginPath();
+          fCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          fCtx.fill();
+        }
+        fCtx.globalAlpha = 1;
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    }
+
+    // =========================================================================
+    // 4. UI UTILITIES (TOAST & CONFIRM MODAL)
+    // =========================================================================
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const colors = {
+        info: 'border-cyan-400/50 bg-slate-900/95 text-cyan-100',
+        success: 'border-emerald-400/60 bg-emerald-950/90 text-emerald-100',
+        error: 'border-rose-500/60 bg-rose-950/90 text-rose-100',
+        warn: 'border-amber-400/60 bg-amber-950/90 text-amber-100'
+      };
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-4 py-3 rounded-xl border text-sm font-medium shadow-xl backdrop-blur-md transition-all duration-300 ${colors[type] || colors.info}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(20px)';
+        setTimeout(() => el.remove(), 300);
+      }, 3200);
+    }
+
+    function askConfirm(title, message) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        modal.classList.remove('hidden');
+
+        const cancelBtn = document.getElementById('confirmCancelBtn');
+        const okBtn = document.getElementById('confirmOkBtn');
+
+        function cleanup(res) {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          okBtn.removeEventListener('click', onOk);
+          resolve(res);
+        }
+        function onCancel() { cleanup(false); }
+        function onOk() { cleanup(true); }
+        cancelBtn.addEventListener('click', onCancel);
+        okBtn.addEventListener('click', onOk);
+      });
+    }
+
+    // =========================================================================
+    // 5. LOCAL STORAGE SAFE HELPERS
+    // =========================================================================
+    function safeGet(key) {
+      try { return localStorage.getItem(key); } catch (e) { return null; }
+    }
+    function safeSet(key, val) {
+      try { localStorage.setItem(key, val); } catch (e) {}
+    }
+    function safeRemove(key) {
+      try { localStorage.removeItem(key); } catch (e) {}
+    }
+
+    // =========================================================================
+    // 6. GAME ENGINE (DUAL-MODE: LIVE BACKEND OR STANDALONE DEMO)
+    // =========================================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialRoom = (urlParams.get('room') || 'RC2026').toUpperCase();
+    const initialHost = urlParams.get('host') === '1';
+
+    const appState = {
+      mode: 'detecting', // 'live' | 'demo'
+      roomCode: initialRoom,
+      isHostView: initialHost,
+      playerToken: safeGet(`rc_token_${initialRoom}`) || null,
+      myTeamId: null,
+      wsConnected: false,
+      ws: null,
+
+      // Server / Demo synchronized state
+      serverState: null,
+
+      // Placement UI state
+      selectedShipId: 'flagship',
+      orientation: 'H',
+      draftShips: {}, // { flagship: { id, name, size, row, col, orientation, cells } }
+      hoverCell: null,
+
+      // Battle UI state
+      targetTeamId: null,
+      mobileBattleTab: 'target', // 'target' | 'own'
+      winnerCelebrated: false,
+      lastClickCoords: null
+    };
+
+    // --- Random Fleet Generator ---
+    function generateRandomFleet() {
+      const fleet = {};
+      const occupied = new Set();
+      for (const bp of SHIP_BLUEPRINTS) {
+        let placed = false;
+        let attempts = 0;
+        while (!placed && attempts < 200) {
+          attempts++;
+          const orient = Math.random() < 0.5 ? 'H' : 'V';
+          const maxR = orient === 'V' ? GRID_SIZE - bp.size : GRID_SIZE - 1;
+          const maxC = orient === 'H' ? GRID_SIZE - bp.size : GRID_SIZE - 1;
+          const row = Math.floor(Math.random() * (maxR + 1));
+          const col = Math.floor(Math.random() * (maxC + 1));
+          const cells = [];
+          let valid = true;
+          for (let i = 0; i < bp.size; i++) {
+            const r = row + (orient === 'V' ? i : 0);
+            const c = col + (orient === 'H' ? i : 0);
+            if (occupied.has(`${r},${c}`)) { valid = false; break; }
+            cells.push({ row: r, col: c });
+          }
+          if (valid) {
+            cells.forEach(c => occupied.add(`${c.row},${c.col}`));
+            fleet[bp.id] = { id: bp.id, name: bp.name, size: bp.size, row, col, orientation: orient, cells };
+            placed = true;
+          }
+        }
+      }
+      return fleet;
+    }
+
+    // --- Demo Mode In-Memory Engine (used when running standalone in Canvas) ---
+    const DemoEngine = {
+      db: null,
+      botTimer: null,
+      initRoom(code) {
+        const teams = {};
+        TEAM_ORDER.forEach(tid => {
+          const meta = TEAMS_CONFIG[tid];
+          teams[tid] = {
+            team_id: tid,
+            name: meta.name,
+            color: meta.color,
+            accent: meta.accent,
+            claimed: false,
+            player_name: '',
+            confirmed: false,
+            bullets: 5,
+            eliminated: false,
+            last_target_team: null,
+            remaining_cells: 11,
+            remaining_ships: 5,
+            shots_received: [],
+            ships: [],
+            sunk_ships: []
+          };
+        });
+        this.db = {
+          room_code: code,
+          phase: 'lobby',
+          current_turn: null,
+          winner: null,
+          teams,
+          team_order: TEAM_ORDER,
+          logs: [{ id: 1, message: `สร้างห้อง ${code} (โหมดจำลอง) พร้อมเข้าเล่นแล้ว`, type: 'system' }]
+        };
+      },
+      getPublicState(viewerTeam) {
+        const teamsOut = {};
+        for (const tid of TEAM_ORDER) {
+          const t = this.db.teams[tid];
+          const isOwner = viewerTeam === tid;
+          teamsOut[tid] = {
+            ...t,
+            ships: isOwner ? t.ships : []
+          };
+        }
+        return {
+          room_code: this.db.room_code,
+          phase: this.db.phase,
+          current_turn: this.db.current_turn,
+          winner: this.db.winner,
+          viewer_team: viewerTeam,
+          teams: teamsOut,
+          team_order: TEAM_ORDER,
+          logs: [...this.db.logs].slice(0, 30)
+        };
+      },
+      join(teamId) {
+        const t = this.db.teams[teamId];
+        if (t.claimed && appState.myTeamId !== teamId) {
+          throw new Error('ทีมนี้ถูกเลือกแล้ว');
+        }
+        t.claimed = true;
+        appState.myTeamId = teamId;
+        appState.playerToken = `demo_${teamId}`;
+        this.db.logs.unshift({ id: Date.now(), message: `${t.name} เข้าร่วมห้องแล้ว`, type: 'join', shooter_team: teamId });
+        return this.getPublicState(teamId);
+      },
+      confirmFleet(teamId, shipsArr) {
+        const t = this.db.teams[teamId];
+        t.ships = shipsArr;
+        t.confirmed = true;
+        this.db.logs.unshift({ id: Date.now(), message: `${t.name} ยืนยันกองยานพร้อมรบแล้ว`, type: 'confirm', shooter_team: teamId });
+        const allConfirmed = TEAM_ORDER.every(id => this.db.teams[id].confirmed);
+        if (allConfirmed) {
+          this.db.phase = 'battle';
+          this.db.current_turn = TEAM_ORDER[0];
+          this.db.logs.unshift({ id: Date.now() + 1, message: 'ครบทั้ง 5 ทีมแล้ว! เริ่มการต่อสู้ — เทิร์นแรก: ORANGE NOVA', type: 'system' });
+          this.scheduleBotTurnIfNeeded();
+        } else {
+          this.db.phase = 'placement';
+        }
+        return this.getPublicState(appState.myTeamId);
+      },
+      fillBotsAndStart() {
+        for (const tid of TEAM_ORDER) {
+          const t = this.db.teams[tid];
+          if (!t.confirmed) {
+            t.claimed = true;
+            t.ships = Object.values(generateRandomFleet());
+            t.confirmed = true;
+            this.db.logs.unshift({ id: Date.now() + Math.random(), message: `${t.name} (บอทจำลอง) ยืนยันกองยานแล้ว`, type: 'confirm', shooter_team: tid });
+          }
+        }
+        this.db.phase = 'battle';
+        this.db.current_turn = TEAM_ORDER[0];
+        this.db.logs.unshift({ id: Date.now() + 2, message: 'ครบทั้ง 5 ทีมแล้ว! เริ่มการต่อสู้ — เทิร์นแรก: ORANGE NOVA', type: 'system' });
+        this.scheduleBotTurnIfNeeded();
+        return this.getPublicState(appState.myTeamId);
+      },
+      fire(shooterId, targetId, row, col) {
+        if (this.db.phase !== 'battle' || this.db.current_turn !== shooterId) throw new Error('ยังไม่ถึงเทิร์นของทีมนี้');
+        const shooter = this.db.teams[shooterId];
+        const target = this.db.teams[targetId];
+        if (shooter.bullets <= 0) throw new Error('กระสุนหมด กรุณากดข้ามเทิร์น');
+        const aliveOpponents = TEAM_ORDER.filter(id => id !== shooterId && !this.db.teams[id].eliminated);
+        if (aliveOpponents.length > 1 && shooter.last_target_team === targetId) {
+          throw new Error('ห้ามยิงทีมเดิมซ้ำกับรอบก่อนหน้า กรุณาเลือกทีมอื่น');
+        }
+        if (target.shots_received.some(s => s.row === row && s.col === col)) throw new Error('ห้ามยิงพิกัดเดิมซ้ำ');
+        shooter.last_target_team = targetId;
+
+        let hitShip = null;
+        for (const s of target.ships) {
+          if (s.cells.some(c => c.row === row && c.col === col)) { hitShip = s; break; }
+        }
+        const isHit = !!hitShip;
+        const coord = `${String.fromCharCode(65 + col)}${row + 1}`;
+        let shipSunk = false;
+
+        target.shots_received.push({ row, col, coord, is_hit: isHit, shooter_team: shooterId, ship_sunk: false });
+
+        if (isHit) {
+          const hitSet = new Set(target.shots_received.filter(s => s.is_hit).map(s => `${s.row},${s.col}`));
+          if (hitShip.cells.every(c => hitSet.has(`${c.row},${c.col}`))) {
+            shipSunk = true;
+            target.sunk_ships.push(hitShip);
+          }
+          target.remaining_cells = Math.max(0, 11 - hitSet.size);
+          target.remaining_ships = target.ships.filter(s => !s.cells.every(c => hitSet.has(`${c.row},${c.col}`))).length;
+          let msg = `${shooter.name} ยิงโดน ${target.name} ที่ ${coord}`;
+          if (shipSunk) msg += ` (${hitShip.name} ถูกทำลาย!)`;
+          this.db.logs.unshift({ id: Date.now(), message: msg, type: 'hit', shooter_team: shooterId, target_team: targetId });
+
+          if (target.remaining_cells === 0) {
+            target.eliminated = true;
+            this.db.logs.unshift({ id: Date.now() + 1, message: `ยานทุกลำของ ${target.name} ถูกทำลาย! ${target.name} ออกจากเกม`, type: 'eliminated', shooter_team: shooterId, target_team: targetId });
+          }
+        } else {
+          shooter.bullets = Math.max(0, shooter.bullets - 1);
+          target.bullets += 1;
+          this.db.logs.unshift({
+            id: Date.now(),
+            message: `${shooter.name} ยิงพลาด ${target.name} ที่ ${coord} และ ${target.name} ได้กระสุนเพิ่ม 1 นัด`,
+            type: 'miss',
+            shooter_team: shooterId,
+            target_team: targetId
+          });
+        }
+
+        const alive = TEAM_ORDER.filter(id => !this.db.teams[id].eliminated);
+        if (alive.length <= 1) {
+          this.db.phase = 'finished';
+          this.db.winner = alive[0] || shooterId;
+          this.db.current_turn = null;
+          this.db.logs.unshift({ id: Date.now() + 2, message: `🏆 ${this.db.teams[this.db.winner].name} เป็นผู้ชนะแห่ง GALACTIC FLEET!`, type: 'win', shooter_team: this.db.winner });
+        } else {
+          this.advanceTurn(shooterId);
+        }
+        return { isHit, shipSunk, coord, state: this.getPublicState(appState.myTeamId) };
+      },
+      skip(teamId) {
+        if (this.db.current_turn !== teamId) return;
+        this.db.logs.unshift({ id: Date.now(), message: `${this.db.teams[teamId].name} กระสุนหมด — ข้ามเทิร์น`, type: 'skip', shooter_team: teamId });
+        this.advanceTurn(teamId);
+        return this.getPublicState(appState.myTeamId);
+      },
+      advanceTurn(currentId) {
+        const idx = TEAM_ORDER.indexOf(currentId);
+        for (let off = 1; off <= TEAM_ORDER.length; off++) {
+          const cand = TEAM_ORDER[(idx + off) % TEAM_ORDER.length];
+          if (!this.db.teams[cand].eliminated) {
+            this.db.current_turn = cand;
+            break;
+          }
+        }
+        this.scheduleBotTurnIfNeeded();
+      },
+      scheduleBotTurnIfNeeded() {
+        clearTimeout(this.botTimer);
+        if (this.db.phase !== 'battle') return;
+        const turnTeam = this.db.current_turn;
+        if (!turnTeam) return;
+        // If current turn is NOT the human player (or in host-only demo view), let bot play after 900ms
+        if (turnTeam !== appState.myTeamId) {
+          this.botTimer = setTimeout(() => {
+            if (this.db.phase !== 'battle' || this.db.current_turn !== turnTeam) return;
+            const bot = this.db.teams[turnTeam];
+            if (bot.bullets <= 0) {
+              appState.serverState = this.skip(turnTeam);
+              render();
+              return;
+            }
+            const allTargets = TEAM_ORDER.filter(id => id !== turnTeam && !this.db.teams[id].eliminated);
+            if (!allTargets.length) return;
+            const nonRepeat = allTargets.length > 1 ? allTargets.filter(id => id !== bot.last_target_team) : allTargets;
+            const targets = nonRepeat.length ? nonRepeat : allTargets;
+            const targetId = targets[Math.floor(Math.random() * targets.length)];
+            const target = this.db.teams[targetId];
+            const shotSet = new Set(target.shots_received.map(s => `${s.row},${s.col}`));
+            const open = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+              for (let c = 0; c < GRID_SIZE; c++) {
+                if (!shotSet.has(`${r},${c}`)) open.push({ r, c });
+              }
+            }
+            if (!open.length) {
+              appState.serverState = this.skip(turnTeam);
+              render();
+              return;
+            }
+            const pick = open[Math.floor(Math.random() * open.length)];
+            const res = this.fire(turnTeam, targetId, pick.r, pick.c);
+            appState.serverState = res.state;
+            if (res.isHit) SFX.play('hit'); else SFX.play('miss');
+            render();
+          }, 950);
+        }
+      },
+      reset() {
+        clearTimeout(this.botTimer);
+        appState.myTeamId = null;
+        appState.playerToken = null;
+        appState.draftShips = {};
+        appState.winnerCelebrated = false;
+        this.initRoom(appState.roomCode);
+        return this.getPublicState(null);
+      }
+    };
+
+    // =========================================================================
+    // 7. NETWORK & API LAYER
+    // =========================================================================
+    async function detectBackend() {
+      // Never call localhost/private endpoints from Canvas sandbox if protocol is not http(s) or if health fails
+      if (window.location.protocol === 'about:' || window.location.protocol === 'file:' || window.location.hostname === '') {
+        appState.mode = 'demo';
+        DemoEngine.initRoom(appState.roomCode);
+        appState.serverState = DemoEngine.getPublicState(appState.myTeamId);
+        render();
+        return;
+      }
+      try {
+        const res = await fetch('/api/health', { method: 'GET' });
+        if (res.ok) {
+          appState.mode = 'live';
+          await fetchRoomState();
+          connectWebSocket();
+          return;
+        }
+      } catch (e) {}
+      appState.mode = 'demo';
+      DemoEngine.initRoom(appState.roomCode);
+      appState.serverState = DemoEngine.getPublicState(appState.myTeamId);
+      render();
+    }
+
+    async function fetchRoomState() {
+      if (appState.mode !== 'live') return;
+      const q = appState.playerToken ? `?player_token=${encodeURIComponent(appState.playerToken)}` : '';
+      const res = await fetch(`/api/room/${encodeURIComponent(appState.roomCode)}${q}`);
+      if (res.ok) {
+        appState.serverState = await res.json();
+        appState.myTeamId = appState.serverState.viewer_team;
+        render();
+      }
+    }
+
+    function connectWebSocket() {
+      if (appState.mode !== 'live') return;
+      if (appState.ws) {
+        try { appState.ws.close(); } catch (e) {}
+      }
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${proto}//${window.location.host}/ws/${encodeURIComponent(appState.roomCode)}`;
+      const ws = new WebSocket(wsUrl);
+      appState.ws = ws;
+      ws.onopen = () => {
+        appState.wsConnected = true;
+        render();
+      };
+      ws.onmessage = async (evt) => {
+        try {
+          const data = JSON.parse(evt.data);
+          if (data.type === 'room_reset') {
+            appState.playerToken = null;
+            appState.myTeamId = null;
+            appState.draftShips = {};
+            appState.winnerCelebrated = false;
+            safeRemove(`rc_token_${appState.roomCode}`);
+            showToast('ผู้ดูแลห้องรีเซ็ตเกมแล้ว เริ่มรอบใหม่!', 'info');
+          }
+          await fetchRoomState();
+        } catch (e) {}
+      };
+      ws.onclose = () => {
+        appState.wsConnected = false;
+        render();
+        setTimeout(() => {
+          if (appState.mode === 'live') connectWebSocket();
+        }, 2500);
+      };
+    }
+
+    // --- Actions ---
+    async function handleEnterRoom(codeInput) {
+      const cleaned = (codeInput || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      if (!cleaned) { showToast('กรุณากรอกรหัสห้อง เช่น RC2026', 'warn'); return; }
+      appState.roomCode = cleaned;
+      appState.playerToken = safeGet(`rc_token_${cleaned}`) || null;
+      appState.myTeamId = null;
+      appState.draftShips = {};
+      appState.winnerCelebrated = false;
+
+      if (appState.mode === 'live') {
+        await fetchRoomState();
+        connectWebSocket();
+      } else {
+        DemoEngine.initRoom(cleaned);
+        appState.serverState = DemoEngine.getPublicState(null);
+        render();
+      }
+      showToast(`เข้าสู่ห้อง ${cleaned} แล้ว`, 'success');
+    }
+
+    async function handleJoinTeam(teamId) {
+      SFX.init();
+      if (appState.mode === 'live') {
+        try {
+          const res = await fetch('/api/room/join', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room_code: appState.roomCode,
+              team_id: teamId,
+              player_token: appState.playerToken
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) { showToast(data.detail || 'ไม่สามารถเลือกทีมได้', 'error'); return; }
+          appState.playerToken = data.player_token;
+          safeSet(`rc_token_${appState.roomCode}`, data.player_token);
+          appState.serverState = data.state;
+          appState.myTeamId = data.state.viewer_team;
+          SFX.play('place');
+          render();
+        } catch (e) {
+          showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+      } else {
+        try {
+          appState.serverState = DemoEngine.join(teamId);
+          SFX.play('place');
+          render();
+        } catch (e) {
+          showToast(e.message, 'error');
+        }
+      }
+    }
+
+    function handlePlaceShip(row, col) {
+      const bp = SHIP_BLUEPRINTS.find(b => b.id === appState.selectedShipId);
+      if (!bp) return;
+      const orient = appState.orientation;
+      const cells = [];
+      for (let i = 0; i < bp.size; i++) {
+        const r = row + (orient === 'V' ? i : 0);
+        const c = col + (orient === 'H' ? i : 0);
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) {
+          showToast('ไม่สามารถวางยานออกนอกกระดาน 8×8 ได้', 'warn');
+          return;
+        }
+        cells.push({ row: r, col: c });
+      }
+      // Check overlap with other placed ships
+      for (const [sid, ship] of Object.entries(appState.draftShips)) {
+        if (sid === bp.id) continue;
+        for (const sc of ship.cells) {
+          if (cells.some(nc => nc.row === sc.row && nc.col === sc.col)) {
+            showToast('ห้ามวางยานทับกัน!', 'warn');
+            return;
+          }
+        }
+      }
+      appState.draftShips[bp.id] = {
+        id: bp.id, name: bp.name, size: bp.size, row, col, orientation: orient, cells
+      };
+      SFX.play('place');
+      // Auto-select next unplaced ship
+      const nextUnplaced = SHIP_BLUEPRINTS.find(b => !appState.draftShips[b.id]);
+      if (nextUnplaced) appState.selectedShipId = nextUnplaced.id;
+      render();
+    }
+
+    function handleRandomizeShips() {
+      SFX.init();
+      appState.draftShips = generateRandomFleet();
+      SFX.play('place');
+      render();
+    }
+
+    async function handleConfirmFleet() {
+      if (Object.keys(appState.draftShips).length !== SHIP_BLUEPRINTS.length) {
+        showToast('กรุณาวางยานให้ครบทั้ง 5 ลำก่อนยืนยัน', 'warn');
+        return;
+      }
+      const shipsPayload = Object.values(appState.draftShips);
+      if (appState.mode === 'live') {
+        try {
+          const res = await fetch('/api/fleet/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room_code: appState.roomCode,
+              team_id: appState.myTeamId,
+              player_token: appState.playerToken,
+              ships: shipsPayload
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) { showToast(data.detail || 'ยืนยันไม่สำเร็จ', 'error'); return; }
+          appState.serverState = data.state;
+          SFX.play('place');
+          showToast('ยืนยันกองยานสำเร็จ!', 'success');
+          render();
+        } catch (e) {
+          showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+      } else {
+        appState.serverState = DemoEngine.confirmFleet(appState.myTeamId, shipsPayload);
+        SFX.play('place');
+        showToast('ยืนยันกองยานสำเร็จ!', 'success');
+        render();
+      }
+    }
+
+    function handleDemoFillBots() {
+      if (appState.mode !== 'demo') return;
+      appState.serverState = DemoEngine.fillBotsAndStart();
+      SFX.play('place');
+      showToast('จำลองครบ 5 ทีมแล้ว เริ่มการต่อสู้!', 'success');
+      render();
+    }
+
+    async function handleFire(row, col, event) {
+      if (!appState.serverState || appState.serverState.phase !== 'battle') return;
+      if (appState.serverState.current_turn !== appState.myTeamId) {
+        showToast('กรุณารอให้ถึงเทิร์นของคุณก่อน', 'warn');
+        return;
+      }
+      const myTeam = appState.serverState.teams[appState.myTeamId];
+      if (myTeam.bullets <= 0) {
+        showToast('กระสุนหมดแล้ว! กดปุ่ม "ข้ามเทิร์น"', 'warn');
+        return;
+      }
+      const targetId = appState.targetTeamId;
+      if (!targetId || targetId === appState.myTeamId) {
+        showToast('กรุณาเลือกทีมเป้าหมาย', 'warn');
+        return;
+      }
+      const aliveOpponents = TEAM_ORDER.filter(id => id !== appState.myTeamId && !appState.serverState.teams[id].eliminated);
+      if (aliveOpponents.length > 1 && myTeam.last_target_team === targetId) {
+        showToast('ห้ามยิงทีมเดิมซ้ำกับรอบก่อนหน้า กรุณาเลือกทีมอื่น', 'warn');
+        return;
+      }
+      const targetTeam = appState.serverState.teams[targetId];
+      if (targetTeam.shots_received.some(s => s.row === row && s.col === col)) {
+        showToast('ห้ามยิงพิกัดเดิมซ้ำ', 'warn');
+        return;
+      }
+
+      const rect = event?.currentTarget?.getBoundingClientRect();
+      const fxX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const fxY = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+
+      if (appState.mode === 'live') {
+        try {
+          const res = await fetch('/api/battle/fire', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room_code: appState.roomCode,
+              team_id: appState.myTeamId,
+              player_token: appState.playerToken,
+              target_team: targetId,
+              row, col
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) { showToast(data.detail || 'ยิงไม่สำเร็จ', 'error'); return; }
+          appState.serverState = data.state;
+          if (data.result.is_hit) {
+            SFX.play('hit');
+            spawnExplosion(fxX, fxY, TEAMS_CONFIG[targetId].accent, 34);
+            showToast(`💥 ยิงโดน ${TEAMS_CONFIG[targetId].name} ที่ ${data.result.coord}!`, 'success');
+          } else {
+            SFX.play('miss');
+            spawnExplosion(fxX, fxY, '#94a3b8', 12);
+            showToast(`💨 ยิงพลาดที่ ${data.result.coord} (กระสุน -1, เป้าหมาย +1)`, 'info');
+          }
+          render();
+        } catch (e) {
+          showToast('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+        }
+      } else {
+        try {
+          const res = DemoEngine.fire(appState.myTeamId, targetId, row, col);
+          appState.serverState = res.state;
+          if (res.isHit) {
+            SFX.play('hit');
+            spawnExplosion(fxX, fxY, TEAMS_CONFIG[targetId].accent, 34);
+            showToast(`💥 ยิงโดน ${TEAMS_CONFIG[targetId].name} ที่ ${res.coord}!`, 'success');
+          } else {
+            SFX.play('miss');
+            spawnExplosion(fxX, fxY, '#94a3b8', 12);
+            showToast(`💨 ยิงพลาดที่ ${res.coord} (กระสุน -1, เป้าหมาย +1)`, 'info');
+          }
+          render();
+        } catch (e) {
+          showToast(e.message, 'error');
+        }
+      }
+    }
+
+    async function handleSkipTurn() {
+      if (appState.mode === 'live') {
+        const res = await fetch('/api/battle/skip', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room_code: appState.roomCode,
+            team_id: appState.myTeamId,
+            player_token: appState.playerToken
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.detail || 'ไม่สามารถข้ามเทิร์นได้', 'error'); return; }
+        appState.serverState = data.state;
+        render();
+      } else {
+        appState.serverState = DemoEngine.skip(appState.myTeamId);
+        render();
+      }
+    }
+
+    async function handleResetGame() {
+      const ok = await askConfirm('รีเซ็ตเกมใหม่ทั้งหมด?', `ข้อมูลกองยาน กระสุน และผลยิงในห้อง ${appState.roomCode} จะถูกรีเซ็ตกลับไปหน้าเลือกทีม`);
+      if (!ok) return;
+
+      if (appState.mode === 'live') {
+        const res = await fetch('/api/room/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room_code: appState.roomCode })
+        });
+        if (res.ok) {
+          appState.playerToken = null;
+          appState.myTeamId = null;
+          appState.draftShips = {};
+          appState.winnerCelebrated = false;
+          safeRemove(`rc_token_${appState.roomCode}`);
+          appState.serverState = await res.json().then(d => d.state);
+          showToast('รีเซ็ตเกมสำเร็จ!', 'success');
+          render();
+        }
+      } else {
+        appState.serverState = DemoEngine.reset();
+        showToast('รีเซ็ตเกมสำเร็จ!', 'success');
+        render();
+      }
+    }
+
+    // =========================================================================
+    // 8. GRID RENDERER (8x8 + SVG SHIP OVERLAYS)
+    // =========================================================================
+    function renderGridHtml({ boardId, ships = [], shots = [], mode = 'own', onCellClickAttr = '' }) {
+      const shotMap = {};
+      shots.forEach(s => { shotMap[`${s.row},${s.col}`] = s; });
+
+      const previewSet = new Set();
+      let previewValid = true;
+      if (mode === 'placement' && appState.hoverCell) {
+        const bp = SHIP_BLUEPRINTS.find(b => b.id === appState.selectedShipId);
+        if (bp) {
+          for (let i = 0; i < bp.size; i++) {
+            const r = appState.hoverCell.row + (appState.orientation === 'V' ? i : 0);
+            const c = appState.hoverCell.col + (appState.orientation === 'H' ? i : 0);
+            if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) {
+              previewValid = false;
+            } else {
+              previewSet.add(`${r},${c}`);
+              for (const [sid, sh] of Object.entries(appState.draftShips)) {
+                if (sid === bp.id) continue;
+                if (sh.cells.some(sc => sc.row === r && sc.col === c)) previewValid = false;
+              }
+            }
+          }
+        }
+      }
+
+      // Build ship anchor map for SVG overlay on start cell
+      const shipAnchorMap = {};
+      ships.forEach(s => {
+        shipAnchorMap[`${s.row},${s.col}`] = s;
+      });
+
+      const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+      let html = `<div id="${boardId}" class="tactical-grid">`;
+      html += `<div class="grid-header-cell"></div>`;
+      cols.forEach(ch => { html += `<div class="grid-header-cell">${ch}</div>`; });
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+        html += `<div class="grid-row-label">${r + 1}</div>`;
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const key = `${r},${c}`;
+          const shot = shotMap[key];
+          let cls = 'grid-cell';
+          if (mode === 'own') cls += ' disabled-cell';
+          if (previewSet.has(key)) cls += previewValid ? ' preview-valid' : ' preview-invalid';
+          if (shot) {
+            cls += shot.is_hit ? ' shot-hit disabled-cell' : ' shot-miss disabled-cell';
+          }
+
+          // Ship SVG overlay anchored at top-left cell of the ship
+          let shipOverlay = '';
+          const anchorShip = shipAnchorMap[key];
+          if (anchorShip) {
+            const teamMeta = TEAMS_CONFIG[mode === 'target' ? appState.targetTeamId : (appState.myTeamId || 'BLUE_COMET')];
+            const isV = anchorShip.orientation === 'V';
+            const spanPct = anchorShip.size * 100 + (anchorShip.size - 1) * 8;
+            const styleStr = isV
+              ? `position:absolute; top:2px; left:2px; width:calc(${spanPct}% - 4px); height:calc(100% - 4px); transform:rotate(90deg) translateY(-100%); transform-origin:top left; pointer-events:none; z-index:4;`
+              : `position:absolute; top:2px; left:2px; width:calc(${spanPct}% - 4px); height:calc(100% - 4px); pointer-events:none; z-index:4;`;
+            shipOverlay = `<div style="${styleStr}">${shipSvg(anchorShip.id, anchorShip.size, teamMeta.color, teamMeta.accent, isV, mode === 'target')}</div>`;
+          }
+
+          let marker = '';
+          if (shot) {
+            if (shot.is_hit) {
+              marker = `<span class="relative z-10 text-base sm:text-lg leading-none drop-shadow-[0_0_6px_rgba(248,113,113,0.95)]">💥</span>`;
+            } else {
+              marker = `<span class="relative z-10 w-2.5 h-2.5 rounded-full bg-slate-400/75 shadow-[0_0_6px_rgba(148,163,184,0.6)]"></span>`;
+            }
+          }
+
+          const dataAttrs = `data-row="${r}" data-col="${c}"`;
+          html += `<div class="${cls}" ${dataAttrs} ${onCellClickAttr}>${shipOverlay}${marker}</div>`;
+        }
+      }
+      html += `</div>`;
+      return html;
+    }
+
+    // =========================================================================
+    // 9. VIEW RENDERERS
+    // =========================================================================
+    function renderTopNav() {
+      const st = appState.serverState;
+      const syncLabel = appState.mode === 'live'
+        ? (appState.wsConnected ? '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span><span class="text-emerald-300">ซิงก์สด</span>' : '<span class="w-2 h-2 rounded-full bg-amber-400"></span><span class="text-amber-300">กำลังเชื่อมต่อ…</span>')
+        : '<span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span><span class="text-cyan-300">โหมดจำลอง (Demo)</span>';
+
+      return `
+        <header class="w-full border-b border-slate-700/40 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40">
+          <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-orange-500 flex items-center justify-center shadow-[0_0_14px_rgba(56,189,248,0.55)] font-orbitron font-black text-xs text-slate-950">RC</div>
+              <div>
+                <div class="font-orbitron font-extrabold text-xs sm:text-sm tracking-wider text-white">RC BEYOND TOGETHER</div>
+                <div class="text-[10px] sm:text-xs text-cyan-300 font-semibold tracking-widest">GALACTIC FLEET • ห้อง ${st ? st.room_code : appState.roomCode}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 border border-slate-700/60 text-xs font-semibold">
+                ${syncLabel}
+              </div>
+              <button id="bgmBtn" class="px-2.5 py-1.5 rounded-lg ${SFX.bgmEnabled && !SFX.muted ? 'bg-sky-500/25 border-sky-400/60 text-sky-200' : 'bg-slate-800/80 border-slate-700/60 text-slate-300'} hover:brightness-110 text-xs font-semibold border transition">
+                ${SFX.bgmEnabled && !SFX.muted ? '🎵 เพลง: เปิด' : '🎵 เพลง: ปิด'}
+              </button>
+              <button id="muteBtn" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700/60 transition">
+                ${SFX.muted ? '🔇 ปิดเสียง' : '🔊 เสียง'}
+              </button>
+              <button id="toggleHostBtn" class="px-3 py-1.5 rounded-lg ${appState.isHostView ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-indigo-600/80 hover:bg-indigo-500 text-white font-semibold'} text-xs transition shadow">
+                ${appState.isHostView ? '📱 กลับหน้าผู้เล่น' : '🖥️ หน้าจอ Host (ขึ้นจอ)'}
+              </button>
+              <button id="resetGameBtn" class="px-3 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-white text-xs font-semibold transition shadow">
+                ↺ Reset Game
+              </button>
+            </div>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderLobbyView(st) {
+      return `
+        <main class="flex-1 max-w-6xl mx-auto w-full px-3 sm:px-6 py-5 sm:py-8 flex flex-col gap-6">
+          <!-- Hero Banner -->
+          <section class="glass-panel rounded-3xl overflow-hidden border border-cyan-400/25 relative">
+            <div class="grid md:grid-cols-12 items-center">
+              <div class="md:col-span-7 p-6 sm:p-8 z-10">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/35 text-cyan-300 text-xs font-bold mb-3">
+                  🚀 REAL-TIME 5-TEAM SPACE BATTLE
+                </div>
+                <h1 class="font-orbitron text-3xl sm:text-5xl font-black tracking-tight text-white neon-text-cyan leading-tight">
+                  RC BEYOND TOGETHER
+                </h1>
+                <div class="font-orbitron text-sm sm:text-lg font-bold text-amber-300 tracking-[0.2em] mt-1 mb-3">
+                  GALACTIC FLEET
+                </div>
+                <p class="text-base sm:text-xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-pink-200 mb-5">
+                  “ชาว RC พร้อมบิน มุ่งสู่อนาคตไปด้วยกัน”
+                </p>
+
+                <!-- Room Code Bar -->
+                <div class="flex flex-col sm:flex-row gap-2.5 max-w-md">
+                  <div class="flex-1">
+                    <label class="block text-[11px] font-semibold text-slate-400 mb-1">รหัสห้อง (Room Code)</label>
+                    <input id="roomCodeInput" type="text" value="${appState.roomCode}" placeholder="เช่น RC2026"
+                      class="w-full px-4 py-2.5 rounded-xl bg-slate-900/90 border border-cyan-400/40 text-white font-orbitron font-bold tracking-wider focus:outline-none focus:border-cyan-300" />
+                  </div>
+                  <div class="flex items-end">
+                    <button id="enterRoomBtn" class="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white font-bold shadow-[0_0_18px_rgba(0,180,216,0.45)] transition">
+                      เข้าห้อง
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="md:col-span-5 h-48 sm:h-64 md:h-full relative overflow-hidden">
+                <img src="${HERO_IMG_SRC}" alt="RC Beyond Together" class="w-full h-full object-cover opacity-90" />
+                <div class="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#090e26] via-[#090e26]/30 to-transparent"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 5 Team Selection Cards -->
+          <section>
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <span>🪐 เลือกทีมของคุณ (ห้อง ${st.room_code})</span>
+              </h2>
+              <span class="text-xs text-slate-400">1 ทีม ต่อ 1 อุปกรณ์หลัก</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+              ${TEAM_ORDER.map(tid => {
+                const cfg = TEAMS_CONFIG[tid];
+                const t = st.teams[tid];
+                const isMine = appState.myTeamId === tid;
+                const isTaken = t.claimed && !isMine;
+                return `
+                  <button data-join-team="${tid}" ${isTaken ? 'disabled' : ''}
+                    class="group text-left glass-panel rounded-2xl p-4 transition-all duration-200 flex flex-col justify-between relative overflow-hidden ${isTaken ? 'opacity-55 cursor-not-allowed' : 'hover:-translate-y-1 hover:brightness-110 cursor-pointer'}"
+                    style="background:${cfg.bgGrad}; border-color:${isMine ? '#fff' : cfg.border}; box-shadow: 0 0 22px ${isTaken ? 'transparent' : cfg.glow};">
+                    <div class="flex items-center justify-between mb-3">
+                      ${planetSvg(tid, 46)}
+                      <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isTaken ? 'bg-slate-800 text-slate-300' : (isMine ? 'bg-white text-slate-950' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40')}">
+                        ${isMine ? 'ทีมของคุณ' : (isTaken ? 'เลือกแล้ว' : 'ว่าง')}
+                      </span>
+                    </div>
+                    <div>
+                      <div class="font-orbitron font-extrabold text-sm sm:text-base text-white tracking-wide">${cfg.name}</div>
+                      <div class="text-xs text-slate-300 mt-0.5">สีทีม: ${cfg.thaiColor}</div>
+                    </div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </section>
+        </main>
+      `;
+    }
+
+    function renderPlacementView(st) {
+      const myCfg = TEAMS_CONFIG[appState.myTeamId];
+      const myTeam = st.teams[appState.myTeamId];
+      const placedCount = Object.keys(appState.draftShips).length;
+      const isConfirmed = myTeam.confirmed;
+
+      return `
+        <main class="flex-1 max-w-6xl mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 flex flex-col gap-5">
+          <!-- Team Readiness Strip -->
+          <section class="glass-panel rounded-2xl p-3.5 border border-slate-700/50">
+            <div class="text-xs font-bold text-slate-300 mb-2">สถานะความพร้อมของทั้ง 5 ทีม (ครบ 5 ทีมเริ่มเกมอัตโนมัติ)</div>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              ${TEAM_ORDER.map(tid => {
+                const cfg = TEAMS_CONFIG[tid];
+                const t = st.teams[tid];
+                const statusTxt = t.confirmed ? '✅ ยืนยันแล้ว' : (t.claimed ? '🛸 กำลังวางยาน' : '⏳ รอเข้าทีม');
+                return `
+                  <div class="rounded-xl px-3 py-2 border flex items-center gap-2" style="background:${cfg.badgeBg}; border-color:${cfg.border}">
+                    ${planetSvg(tid, 24)}
+                    <div class="min-w-0">
+                      <div class="font-orbitron text-[11px] font-bold text-white truncate">${cfg.name}</div>
+                      <div class="text-[11px] text-slate-200">${statusTxt}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </section>
+
+          <div class="grid lg:grid-cols-12 gap-5 items-start">
+            <!-- Left: Controls & Ship List -->
+            <section class="lg:col-span-5 glass-panel rounded-2xl p-4 sm:p-5 flex flex-col gap-4" style="border-color:${myCfg.border}">
+              <div class="flex items-center gap-3">
+                ${planetSvg(myCfg.id, 42)}
+                <div>
+                  <div class="font-orbitron font-extrabold text-lg text-white">${myCfg.name}</div>
+                  <div class="text-xs text-slate-300">วางยานอวกาศทั้ง 5 ลำลงบนกระดาน 8×8</div>
+                </div>
+              </div>
+
+              ${isConfirmed ? `
+                <div class="p-4 rounded-xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-200 text-sm font-semibold">
+                  ✅ ยืนยันกองยานเรียบร้อยแล้ว! กำลังรอทีมอื่นยืนยันให้ครบทั้ง 5 ทีม...
+                </div>
+              ` : `
+                <!-- Ship Selector -->
+                <div class="flex flex-col gap-2">
+                  <div class="text-xs font-bold text-slate-300">1. เลือกยานที่ต้องการวาง</div>
+                  <div class="grid grid-cols-1 gap-2">
+                    ${SHIP_BLUEPRINTS.map(bp => {
+                      const placed = !!appState.draftShips[bp.id];
+                      const selected = appState.selectedShipId === bp.id;
+                      return `
+                        <button data-select-ship="${bp.id}"
+                          class="px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition ${selected ? 'bg-slate-800 border-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]' : 'bg-slate-900/70 border-slate-700/70 hover:border-slate-500'}">
+                          <div class="flex items-center gap-3">
+                            <div class="w-16 h-6">${shipSvg(bp.id, bp.size, myCfg.color, myCfg.accent)}</div>
+                            <span class="text-sm font-bold text-white">${bp.label}</span>
+                          </div>
+                          <span class="text-xs font-bold ${placed ? 'text-emerald-400' : 'text-amber-300'}">${placed ? 'วางแล้ว ✓' : 'ยังไม่วาง'}</span>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+
+                <!-- Orientation & Action Buttons -->
+                <div class="flex flex-col gap-2.5">
+                  <div class="text-xs font-bold text-slate-300">2. เลือกทิศทางและวางบนกระดาน</div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button id="orientHBtn" class="py-2 rounded-xl text-xs font-bold border transition ${appState.orientation === 'H' ? 'bg-cyan-500 text-slate-950 border-cyan-300' : 'bg-slate-800 text-slate-200 border-slate-700'}">
+                      ↔️ แนวนอน (H)
+                    </button>
+                    <button id="orientVBtn" class="py-2 rounded-xl text-xs font-bold border transition ${appState.orientation === 'V' ? 'bg-cyan-500 text-slate-950 border-cyan-300' : 'bg-slate-800 text-slate-200 border-slate-700'}">
+                      ↕️ แนวตั้ง (V)
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button id="randomizeBtn" class="py-2.5 rounded-xl bg-indigo-600/85 hover:bg-indigo-500 text-white text-xs font-bold transition shadow">
+                      🎲 สุ่มวางยาน
+                    </button>
+                    <button id="clearBoardBtn" class="py-2.5 rounded-xl bg-slate-700/80 hover:bg-slate-600 text-slate-200 text-xs font-bold transition">
+                      🗑️ ล้างกระดาน
+                    </button>
+                  </div>
+                  <button id="confirmFleetBtn" ${placedCount < 5 ? 'disabled' : ''}
+                    class="w-full py-3 rounded-xl font-bold text-sm transition shadow-lg ${placedCount === 5 ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:brightness-110 text-slate-950' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}">
+                    🚀 ยืนยันกองยาน (${placedCount}/5 ลำ)
+                  </button>
+                </div>
+              `}
+
+              ${appState.mode === 'demo' ? `
+                <button id="demoBotsBtn" class="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-bold transition">
+                  ⚡ โหมดจำลอง: ให้บอทอีก 4 ทีมวางยานและเริ่มเกมทันที
+                </button>
+              ` : ''}
+            </section>
+
+            <!-- Right: 8x8 Placement Grid -->
+            <section class="lg:col-span-7 glass-panel rounded-2xl p-4 sm:p-5 border border-slate-700/60">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm sm:text-base font-bold text-white">กระดานกองยานของคุณ (8 × 8)</h3>
+                <span class="text-xs text-slate-400">ทีมอื่นมองไม่เห็นตำแหน่งยานของคุณ</span>
+              </div>
+              <div class="max-w-md mx-auto">
+                ${renderGridHtml({
+                  boardId: 'placementGrid',
+                  ships: isConfirmed ? myTeam.ships : Object.values(appState.draftShips),
+                  mode: isConfirmed ? 'own' : 'placement',
+                  onCellClickAttr: isConfirmed ? '' : 'data-place-cell="1"'
+                })}
+              </div>
+            </section>
+          </div>
+        </main>
+      `;
+    }
+
+    function renderBattleView(st) {
+      const myId = appState.myTeamId;
+      const myCfg = TEAMS_CONFIG[myId];
+      const myTeam = st.teams[myId];
+      const isMyTurn = st.current_turn === myId && !myTeam.eliminated;
+      const turnCfg = st.current_turn ? TEAMS_CONFIG[st.current_turn] : null;
+
+      // Ensure valid targetTeamId (avoiding last_target_team when >1 opponents remain)
+      const validTargets = TEAM_ORDER.filter(id => id !== myId && !st.teams[id].eliminated);
+      const allowedTargets = validTargets.length > 1
+        ? validTargets.filter(id => id !== myTeam.last_target_team)
+        : validTargets;
+      if (!appState.targetTeamId || !allowedTargets.includes(appState.targetTeamId)) {
+        appState.targetTeamId = allowedTargets[0] || validTargets[0] || null;
+      }
+      const targetTeam = appState.targetTeamId ? st.teams[appState.targetTeamId] : null;
+      const targetCfg = appState.targetTeamId ? TEAMS_CONFIG[appState.targetTeamId] : null;
+
+      return `
+        <main class="flex-1 max-w-7xl mx-auto w-full px-3 sm:px-6 py-4 flex flex-col gap-4">
+          <!-- Player HUD & Turn Status -->
+          <section class="glass-panel rounded-2xl p-3.5 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3" style="border-color:${myCfg.border}">
+            <div class="flex items-center gap-3">
+              ${planetSvg(myId, 44)}
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-orbitron font-extrabold text-base sm:text-lg text-white">${myCfg.name}</span>
+                  ${myTeam.eliminated ? '<span class="px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-300 text-xs font-bold">ถูกทำลายแล้ว</span>' : ''}
+                </div>
+                <div class="flex items-center gap-3 text-xs sm:text-sm text-slate-300 mt-0.5 flex-wrap">
+                  <span>🔫 กระสุน: <strong class="text-amber-300 text-base">${myTeam.bullets}</strong> นัด</span>
+                  <span>🚀 ยานเหลือ: <strong class="text-cyan-300">${myTeam.remaining_ships}/5 ลำ</strong> (${myTeam.remaining_cells}/11 ช่อง)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="w-full md:w-auto flex items-center gap-2.5 flex-wrap">
+              <div class="flex-1 md:flex-none px-4 py-2 rounded-xl font-bold text-sm text-center ${isMyTurn ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 pulse-turn shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-slate-800/90 text-slate-200 border border-slate-700'}">
+                ${isMyTurn ? '🎯 ถึงเทิร์นของคุณ! เลือกเป้าหมายแล้วยิงเลย' : `⏳ กำลังรอทีม ${turnCfg ? turnCfg.name : '...'}`}
+              </div>
+              ${isMyTurn && myTeam.bullets <= 0 ? `
+                <button id="skipTurnBtn" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition shadow">
+                  ⏭️ ข้ามเทิร์น (กระสุนหมด)
+                </button>
+              ` : ''}
+            </div>
+          </section>
+
+          <!-- 5-Team Status Strip -->
+          <section class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            ${TEAM_ORDER.map(tid => {
+              const cfg = TEAMS_CONFIG[tid];
+              const t = st.teams[tid];
+              const isTurn = st.current_turn === tid;
+              const isSelectedTarget = appState.targetTeamId === tid;
+              const isRepeatLocked = validTargets.length > 1 && myTeam.last_target_team === tid;
+              const canSelect = tid !== myId && !t.eliminated && !isRepeatLocked;
+              return `
+                <div ${canSelect ? `data-select-target="${tid}"` : ''}
+                  class="glass-panel rounded-xl p-2.5 border transition ${canSelect ? 'cursor-pointer hover:brightness-110' : ''} ${t.eliminated || isRepeatLocked ? 'opacity-45 grayscale' : ''}"
+                  style="background:${cfg.bgGrad}; border-color:${isSelectedTarget ? '#fff' : (isTurn ? cfg.accent : cfg.border)}; box-shadow:${isTurn ? `0 0 16px ${cfg.glow}` : 'none'}">
+                  <div class="flex items-center justify-between gap-1 mb-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      ${planetSvg(tid, 22)}
+                      <span class="font-orbitron font-bold text-[11px] text-white truncate">${cfg.name}</span>
+                    </div>
+                    ${isTurn ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-950 font-extrabold">TURN</span>' : ''}
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] text-slate-200">
+                    <span>🚀 ${t.remaining_ships}/5 (${t.remaining_cells} ช่อง)</span>
+                    <span>🔫 ${t.bullets}${isRepeatLocked ? ' • พักยิง' : ''}</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </section>
+
+          <!-- Mobile Tab Switcher -->
+          <div class="grid grid-cols-2 gap-2 lg:hidden">
+            <button id="tabTargetBtn" class="py-2 rounded-xl text-xs font-bold ${appState.mobileBattleTab === 'target' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-300'}">🎯 กระดานเป้าหมาย</button>
+            <button id="tabOwnBtn" class="py-2 rounded-xl text-xs font-bold ${appState.mobileBattleTab === 'own' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-300'}">🛡️ กระดานทีมตัวเอง</button>
+          </div>
+
+          <!-- Dual Boards + History -->
+          <div class="grid lg:grid-cols-12 gap-4 items-start">
+            <!-- Target Board -->
+            <section class="lg:col-span-5 glass-panel rounded-2xl p-4 border border-slate-700/60 ${appState.mobileBattleTab === 'own' ? 'hidden lg:block' : ''}">
+              <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <h3 class="text-sm font-bold text-white">🎯 กระดานเป้าหมาย</h3>
+                <select id="targetDropdown" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-600 text-xs font-orbitron font-bold text-white focus:outline-none">
+                  ${validTargets.map(tid => {
+                    const locked = validTargets.length > 1 && myTeam.last_target_team === tid;
+                    return `<option value="${tid}" ${tid === appState.targetTeamId ? 'selected' : ''} ${locked ? 'disabled' : ''}>${TEAMS_CONFIG[tid].name}${locked ? ' (เพิ่งยิงรอบที่แล้ว)' : ''}</option>`;
+                  }).join('')}
+                </select>
+              </div>
+              ${targetTeam ? `
+                <div class="mb-2.5 flex items-center justify-between text-xs px-3 py-1.5 rounded-lg" style="background:${targetCfg.badgeBg}; border:1px solid ${targetCfg.border}">
+                  <span class="font-orbitron font-bold text-white">${targetCfg.name}</span>
+                  <span class="text-slate-200">เหลือ ${targetTeam.remaining_ships} ลำ • กระสุน ${targetTeam.bullets}</span>
+                </div>
+                <div class="max-w-sm mx-auto">
+                  ${renderGridHtml({
+                    boardId: 'targetGrid',
+                    ships: targetTeam.sunk_ships || [],
+                    shots: targetTeam.shots_received || [],
+                    mode: 'target',
+                    onCellClickAttr: 'data-fire-cell="1"'
+                  })}
+                </div>
+              ` : '<div class="text-center text-slate-400 py-8 text-sm">ไม่มีเป้าหมายที่เหลืออยู่</div>'}
+            </section>
+
+            <!-- Own Board -->
+            <section class="lg:col-span-4 glass-panel rounded-2xl p-4 border border-slate-700/60 ${appState.mobileBattleTab === 'target' ? 'hidden lg:block' : ''}">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-white">🛡️ กระดานทีมตัวเอง</h3>
+                <span class="text-xs text-slate-400">ตำแหน่งยานของคุณ</span>
+              </div>
+              <div class="max-w-sm mx-auto">
+                ${renderGridHtml({
+                  boardId: 'ownGrid',
+                  ships: myTeam.ships || [],
+                  shots: myTeam.shots_received || [],
+                  mode: 'own'
+                })}
+              </div>
+            </section>
+
+            <!-- Recent Shot History -->
+            <section class="lg:col-span-3 glass-panel rounded-2xl p-4 border border-slate-700/60">
+              <h3 class="text-sm font-bold text-white mb-2.5">📡 ประวัติการยิงล่าสุด</h3>
+              <div class="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
+                ${st.logs.map(l => {
+                  const badge = l.type === 'hit' ? 'border-rose-500/40 bg-rose-950/35 text-rose-200'
+                    : l.type === 'miss' ? 'border-slate-600/40 bg-slate-900/60 text-slate-300'
+                    : l.type === 'eliminated' ? 'border-amber-500/50 bg-amber-950/40 text-amber-200 font-semibold'
+                    : 'border-cyan-500/30 bg-cyan-950/25 text-cyan-200';
+                  return `<div class="px-3 py-2 rounded-xl border text-xs leading-relaxed ${badge}">${l.message}</div>`;
+                }).join('')}
+              </div>
+            </section>
+          </div>
+        </main>
+      `;
+    }
+
+    function renderHostView(st) {
+      const joinUrl = `${window.location.origin && window.location.origin !== 'null' ? window.location.origin + window.location.pathname : 'https://rc-galactic-fleet.app/'}?room=${encodeURIComponent(st.room_code)}`;
+      return `
+        <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-8 py-5 flex flex-col gap-5">
+          <!-- Host Header + QR Code -->
+          <section class="glass-panel rounded-3xl p-5 sm:p-6 border border-cyan-400/30 grid md:grid-cols-12 gap-5 items-center">
+            <div class="md:col-span-8">
+              <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/35 text-cyan-300 text-xs font-bold mb-2">
+                🖥️ HOST LIVE SCOREBOARD • ห้อง ${st.room_code}
+              </div>
+              <h1 class="font-orbitron text-2xl sm:text-4xl font-black text-white neon-text-cyan">RC BEYOND TOGETHER: GALACTIC FLEET</h1>
+              <p class="text-sm sm:text-lg text-cyan-200 mt-1">“ชาว RC พร้อมบิน มุ่งสู่อนาคตไปด้วยกัน”</p>
+              <div class="mt-4 flex items-center gap-3 flex-wrap">
+                <div class="px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-700 text-sm">
+                  สถานะเกม: <strong class="text-amber-300">${st.phase === 'lobby' ? 'รอเลือกทีม' : st.phase === 'placement' ? 'กำลังวางยาน' : st.phase === 'battle' ? 'กำลังต่อสู้!' : 'จบเกมแล้ว'}</strong>
+                </div>
+                ${st.current_turn ? `
+                  <div class="px-4 py-2 rounded-xl font-orbitron font-bold text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 shadow">
+                    🎯 เทิร์นปัจจุบัน: ${TEAMS_CONFIG[st.current_turn].name}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+            <div class="md:col-span-4 flex flex-col items-center justify-center bg-white/95 text-slate-950 rounded-2xl p-4 shadow-xl">
+              <canvas id="hostQrCanvas" width="156" height="156" class="rounded-lg"></canvas>
+              <div class="text-xs font-extrabold mt-2 text-slate-900">สแกน QR เพื่อเข้าเล่นเกม</div>
+              <div class="text-[11px] font-mono text-slate-600 break-all text-center mt-0.5">รหัสห้อง: ${st.room_code}</div>
+            </div>
+          </section>
+
+          <!-- 5-Team Survival Cards -->
+          <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            ${TEAM_ORDER.map(tid => {
+              const cfg = TEAMS_CONFIG[tid];
+              const t = st.teams[tid];
+              const pct = Math.round((t.remaining_cells / 11) * 100);
+              const isTurn = st.current_turn === tid;
+              return `
+                <div class="glass-panel rounded-2xl p-4 border flex flex-col justify-between transition ${t.eliminated ? 'opacity-45 grayscale' : ''}"
+                  style="background:${cfg.bgGrad}; border-color:${isTurn ? '#fff' : cfg.border}; box-shadow: 0 0 24px ${isTurn ? cfg.glow : 'transparent'}">
+                  <div>
+                    <div class="flex items-center justify-between mb-3">
+                      ${planetSvg(tid, 44)}
+                      <span class="px-2.5 py-1 rounded-full text-xs font-bold ${t.eliminated ? 'bg-rose-600 text-white' : (t.confirmed ? 'bg-emerald-500/25 text-emerald-200' : (t.claimed ? 'bg-amber-500/25 text-amber-200' : 'bg-slate-800 text-slate-400'))}">
+                        ${t.eliminated ? 'ถูกทำลาย' : (t.confirmed ? 'พร้อมรบ' : (t.claimed ? 'เลือกแล้ว' : 'รอเข้าร่วม'))}
+                      </span>
+                    </div>
+                    <div class="font-orbitron font-extrabold text-base text-white">${cfg.name}</div>
+                    <div class="mt-3 space-y-2">
+                      <div class="flex justify-between text-xs text-slate-200">
+                        <span>ยานที่รอด</span>
+                        <strong class="text-white text-sm">${t.remaining_ships} / 5 ลำ</strong>
+                      </div>
+                      <div class="w-full h-2.5 rounded-full bg-slate-900/90 overflow-hidden border border-slate-700/60">
+                        <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%; background:${cfg.accent}"></div>
+                      </div>
+                      <div class="flex justify-between text-xs text-slate-200 pt-1">
+                        <span>ช่องยานคงเหลือ: <strong>${t.remaining_cells}/11</strong></span>
+                        <span>🔫 <strong class="text-amber-300">${t.bullets}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </section>
+
+          <!-- Live Feed -->
+          <section class="glass-panel rounded-2xl p-4 border border-slate-700/60">
+            <h3 class="text-sm font-bold text-white mb-2.5">📡 รายงานการรบแบบเรียลไทม์</h3>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+              ${st.logs.slice(0, 12).map(l => `
+                <div class="px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs text-slate-200">${l.message}</div>
+              `).join('')}
+            </div>
+          </section>
+        </main>
+      `;
+    }
+
+    function renderWinnerOverlay(st) {
+      if (st.phase !== 'finished' || !st.winner) return '';
+      const wCfg = TEAMS_CONFIG[st.winner];
+      if (!appState.winnerCelebrated) {
+        appState.winnerCelebrated = true;
+        setTimeout(() => {
+          SFX.play('win');
+          spawnConfetti(wCfg.accent);
+        }, 120);
+      }
+      return `
+        <div class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div class="glass-panel rounded-3xl max-w-lg w-full p-7 sm:p-9 text-center border-2 relative overflow-hidden" style="border-color:${wCfg.accent}; box-shadow: 0 0 60px ${wCfg.glow}; background:${wCfg.bgGrad}">
+            <div class="flex justify-center mb-4 float-slow">${planetSvg(wCfg.id, 92)}</div>
+            <div class="text-xs font-orbitron font-bold tracking-[0.25em] text-amber-300 mb-1">GALACTIC CHAMPION</div>
+            <h2 class="font-orbitron text-3xl sm:text-4xl font-black text-white mb-2">${wCfg.name}</h2>
+            <p class="text-base text-slate-200 mb-6">🏆 ผู้พิชิตจักรวาล RC BEYOND TOGETHER: GALACTIC FLEET!</p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+              <button id="winnerResetBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-extrabold text-sm shadow-lg hover:brightness-110 transition">
+                🔄 เล่นใหม่อีกครั้ง (Reset Game)
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function drawHostQr(roomCode) {
+      const canvas = document.getElementById('hostQrCanvas');
+      if (!canvas) return;
+      const base = window.location.origin && window.location.origin !== 'null'
+        ? `${window.location.origin}${window.location.pathname}`
+        : 'https://rc-galactic-fleet.app/';
+      const url = `${base}?room=${encodeURIComponent(roomCode)}`;
+      if (window.QRCode && typeof window.QRCode.toCanvas === 'function') {
+        window.QRCode.toCanvas(canvas, url, { width: 156, margin: 1 }, () => {});
+      } else {
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 156, 156);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 12px Prompt, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`ROOM: ${roomCode}`, 78, 82);
+      }
+    }
+
+    // =========================================================================
+    // 10. MASTER RENDER & EVENT BINDING
+    // =========================================================================
+    function render() {
+      const st = appState.serverState;
+      const root = document.getElementById('app');
+      if (!st) {
+        root.innerHTML = `<div class="flex-1 flex items-center justify-center text-cyan-300 font-bold">กำลังเชื่อมต่อระบบอวกาศ...</div>`;
+        return;
+      }
+
+      let bodyHtml = '';
+      if (appState.isHostView) {
+        bodyHtml = renderHostView(st);
+      } else if (!appState.myTeamId) {
+        bodyHtml = renderLobbyView(st);
+      } else if (st.phase === 'lobby' || st.phase === 'placement') {
+        bodyHtml = renderPlacementView(st);
+      } else {
+        bodyHtml = renderBattleView(st);
+      }
+
+      root.innerHTML = renderTopNav() + bodyHtml + renderWinnerOverlay(st);
+      bindEvents(st);
+      if (appState.isHostView) drawHostQr(st.room_code);
+    }
+
+    function bindEvents(st) {
+      document.getElementById('bgmBtn')?.addEventListener('click', () => {
+        SFX.toggleBgm();
+        render();
+      });
+      document.getElementById('muteBtn')?.addEventListener('click', () => {
+        SFX.muted = !SFX.muted;
+        if (SFX.muted) SFX.stopBgm(); else SFX.init();
+        render();
+      });
+      document.getElementById('toggleHostBtn')?.addEventListener('click', () => {
+        appState.isHostView = !appState.isHostView;
+        render();
+      });
+      document.getElementById('resetGameBtn')?.addEventListener('click', handleResetGame);
+      document.getElementById('winnerResetBtn')?.addEventListener('click', handleResetGame);
+
+      // Lobby events
+      document.getElementById('enterRoomBtn')?.addEventListener('click', () => {
+        const val = document.getElementById('roomCodeInput')?.value;
+        handleEnterRoom(val);
+      });
+      document.querySelectorAll('[data-join-team]').forEach(btn => {
+        btn.addEventListener('click', () => handleJoinTeam(btn.dataset.joinTeam));
+      });
+
+      // Placement events
+      document.querySelectorAll('[data-select-ship]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          appState.selectedShipId = btn.dataset.selectShip;
+          render();
+        });
+      });
+      document.getElementById('orientHBtn')?.addEventListener('click', () => {
+        appState.orientation = 'H';
+        render();
+      });
+      document.getElementById('orientVBtn')?.addEventListener('click', () => {
+        appState.orientation = 'V';
+        render();
+      });
+      document.getElementById('randomizeBtn')?.addEventListener('click', handleRandomizeShips);
+      document.getElementById('clearBoardBtn')?.addEventListener('click', () => {
+        appState.draftShips = {};
+        appState.selectedShipId = 'flagship';
+        render();
+      });
+      document.getElementById('confirmFleetBtn')?.addEventListener('click', handleConfirmFleet);
+      document.getElementById('demoBotsBtn')?.addEventListener('click', handleDemoFillBots);
+
+      document.querySelectorAll('[data-place-cell]').forEach(cell => {
+        const r = Number(cell.dataset.row);
+        const c = Number(cell.dataset.col);
+        cell.addEventListener('mouseenter', () => {
+          appState.hoverCell = { row: r, col: c };
+          updatePlacementPreview();
+        });
+        cell.addEventListener('click', () => handlePlaceShip(r, c));
+      });
+      document.getElementById('placementGrid')?.addEventListener('mouseleave', () => {
+        appState.hoverCell = null;
+        updatePlacementPreview();
+      });
+
+      // Battle events
+      document.querySelectorAll('[data-select-target]').forEach(card => {
+        card.addEventListener('click', () => {
+          appState.targetTeamId = card.dataset.selectTarget;
+          render();
+        });
+      });
+      document.getElementById('targetDropdown')?.addEventListener('change', (e) => {
+        appState.targetTeamId = e.target.value;
+        render();
+      });
+      document.querySelectorAll('[data-fire-cell]').forEach(cell => {
+        const r = Number(cell.dataset.row);
+        const c = Number(cell.dataset.col);
+        cell.addEventListener('click', (e) => handleFire(r, c, e));
+      });
+      document.getElementById('skipTurnBtn')?.addEventListener('click', handleSkipTurn);
+      document.getElementById('tabTargetBtn')?.addEventListener('click', () => {
+        appState.mobileBattleTab = 'target';
+        render();
+      });
+      document.getElementById('tabOwnBtn')?.addEventListener('click', () => {
+        appState.mobileBattleTab = 'own';
+        render();
+      });
+    }
+
+    function updatePlacementPreview() {
+      const grid = document.getElementById('placementGrid');
+      if (!grid) return;
+      grid.querySelectorAll('.grid-cell').forEach(el => {
+        el.classList.remove('preview-valid', 'preview-invalid');
+      });
+      if (!appState.hoverCell) return;
+      const bp = SHIP_BLUEPRINTS.find(b => b.id === appState.selectedShipId);
+      if (!bp) return;
+
+      let valid = true;
+      const coords = [];
+      for (let i = 0; i < bp.size; i++) {
+        const r = appState.hoverCell.row + (appState.orientation === 'V' ? i : 0);
+        const c = appState.hoverCell.col + (appState.orientation === 'H' ? i : 0);
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) {
+          valid = false;
+        } else {
+          coords.push([r, c]);
+          for (const [sid, sh] of Object.entries(appState.draftShips)) {
+            if (sid === bp.id) continue;
+            if (sh.cells.some(sc => sc.row === r && sc.col === c)) valid = false;
+          }
+        }
+      }
+      coords.forEach(([r, c]) => {
+        const cell = grid.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+        if (cell) cell.classList.add(valid ? 'preview-valid' : 'preview-invalid');
+      });
+    }
+
+    window.addEventListener('load', () => {
+      initCanvases();
+      detectBackend();
+      const unlockAudio = () => {
+        SFX.init();
+        window.removeEventListener('pointerdown', unlockAudio);
+      };
+      window.addEventListener('pointerdown', unlockAudio, { once: true });
+    });
+  </script>
+</body>
+</html>
