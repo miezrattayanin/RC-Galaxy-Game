@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +44,7 @@ REQUIRED_SHIPS = {
 TOTAL_SHIP_CELLS = sum(REQUIRED_SHIPS.values())  # 12
 INITIAL_BULLETS = 5
 GRID_SIZE = 8
+TURN_SECONDS = 10.0
 
 app = FastAPI(title="RC BEYOND TOGETHER: GALACTIC FLEET")
 app.add_middleware(
@@ -75,6 +77,7 @@ def init_db():
                 current_turn TEXT,
                 winner TEXT,
                 host_token TEXT NOT NULL,
+                turn_deadline_ts REAL,
                 created_at TEXT NOT NULL
             );
 
@@ -269,6 +272,7 @@ def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: 
         "room_code": room["room_code"],
         "phase": room["phase"],
         "current_turn": room["current_turn"],
+        "turn_remaining_sec": max(0.0, round((room["turn_deadline_ts"] or 0) - time.time(), 1)) if room["phase"] == "battle" and room["turn_deadline_ts"] else 0.0,
         "winner": room["winner"],
         "viewer_team": viewer_team,
         "teams": teams_payload,
@@ -454,24 +458,10 @@ async def confirm_fleet(req: ConfirmFleetRequest):
             (code, f"{TEAM_META[req.team_id]['name']} ยืนยันกองยานพร้อมรบแล้ว", req.team_id, now),
         )
 
-        # Check if all 5 teams are confirmed
-        confirmed_count = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM teams WHERE room_code = ? AND confirmed = 1", (code,)
-        ).fetchone()["cnt"]
-        if confirmed_count == len(TEAM_ORDER):
-            conn.execute(
-                "UPDATE rooms SET phase = 'battle', current_turn = ? WHERE room_code = ?",
-                (TEAM_ORDER[0], code),
-            )
-            conn.execute(
-                "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'system', ?, ?)",
-                (code, "ครบทั้ง 5 ทีมแล้ว! เริ่มการต่อสู้ — เทิร์นแรก: ORANGE NOVA", TEAM_ORDER[0], now),
-            )
-        else:
-            conn.execute(
-                "UPDATE rooms SET phase = 'placement' WHERE room_code = ? AND phase = 'lobby'",
-                (code,),
-            )
+        conn.execute(
+            "UPDATE rooms SET phase = 'placement' WHERE room_code = ? AND phase = 'lobby'",
+            (code,),
+        )
 
         state = build_state_payload(conn, code, req.player_token)
 
@@ -655,7 +645,8 @@ async def fire_shot(req: FireRequest):
         else:
             next_turn = advance_turn(conn, code, req.team_id)
             conn.execute(
-                "UPDATE rooms SET current_turn = ? WHERE room_code = ?", (next_turn, code)
+                "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+                (next_turn, time.time() + TURN_SECONDS, code),
             )
 
         state = build_state_payload(conn, code, req.player_token)
@@ -689,7 +680,10 @@ async def skip_turn(req: SkipRequest):
 
         now = datetime.utcnow().isoformat()
         next_turn = advance_turn(conn, code, req.team_id)
-        conn.execute("UPDATE rooms SET current_turn = ? WHERE room_code = ?", (next_turn, code))
+        conn.execute(
+            "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+            (next_turn, time.time() + TURN_SECONDS, code),
+        )
         conn.execute(
             "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'skip', ?, ?)",
             (code, f"{TEAM_META[req.team_id]['name']} กระสุนหมด — ข้ามเทิร์น", req.team_id, now),
@@ -698,6 +692,86 @@ async def skip_turn(req: SkipRequest):
 
     await manager.broadcast(code)
     return {"state": state}
+
+
+
+class StartGameRequest(BaseModel):
+    room_code: str
+
+
+class TimeoutRequest(BaseModel):
+    room_code: str
+
+
+@app.post("/api/room/start")
+async def start_game(req: StartGameRequest):
+    code = normalize_room(req.room_code)
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        room = ensure_room(conn, code)
+        if room["phase"] not in ("lobby", "placement"):
+            raise HTTPException(status_code=400, detail="เกมเริ่มไปแล้ว")
+
+        confirmed_rows = conn.execute(
+            "SELECT team_id FROM teams WHERE room_code = ? AND confirmed = 1", (code,)
+        ).fetchall()
+        confirmed_ids = {r["team_id"] for r in confirmed_rows}
+        if len(confirmed_ids) < 2:
+            raise HTTPException(status_code=400, detail="ต้องมีอย่างน้อย 2 ทีมที่ยืนยันกองยานจึงจะเริ่มเกมได้")
+
+        # Mark unconfirmed teams as not participating (eliminated)
+        for tid in TEAM_ORDER:
+            if tid not in confirmed_ids:
+                conn.execute(
+                    "UPDATE teams SET eliminated = 1 WHERE room_code = ? AND team_id = ?",
+                    (code, tid),
+                )
+
+        first_turn = next(tid for tid in TEAM_ORDER if tid in confirmed_ids)
+        conn.execute(
+            "UPDATE rooms SET phase = 'battle', current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+            (first_turn, time.time() + TURN_SECONDS, code),
+        )
+        conn.execute(
+            "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'system', ?, ?)",
+            (code, f"🚀 Host กดเริ่มเกมแล้ว ({len(confirmed_ids)} ทีม)! เทิร์นแรก: {TEAM_META[first_turn]['name']}", first_turn, now),
+        )
+        state = build_state_payload(conn, code, None)
+
+    await manager.broadcast(code)
+    return {"state": state}
+
+
+@app.post("/api/battle/timeout")
+async def handle_timeout(req: TimeoutRequest):
+    code = normalize_room(req.room_code)
+    now_ts = time.time()
+    now = datetime.utcnow().isoformat()
+    changed = False
+    with get_db() as conn:
+        room = ensure_room(conn, code)
+        if room["phase"] == "battle" and room["current_turn"] and room["turn_deadline_ts"]:
+            if now_ts >= room["turn_deadline_ts"] - 0.15:
+                cur_team = room["current_turn"]
+                conn.execute(
+                    "UPDATE teams SET bullets = MAX(0, bullets - 1) WHERE room_code = ? AND team_id = ?",
+                    (code, cur_team),
+                )
+                conn.execute(
+                    "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'skip', ?, ?)",
+                    (code, f"⏰ {TEAM_META[cur_team]['name']} หมดเวลา 10 วินาที! เสียกระสุน 1 นัด", cur_team, now),
+                )
+                next_turn = advance_turn(conn, code, cur_team)
+                conn.execute(
+                    "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+                    (next_turn, time.time() + TURN_SECONDS, code),
+                )
+                changed = True
+        state = build_state_payload(conn, code, None)
+
+    if changed:
+        await manager.broadcast(code)
+    return {"changed": changed, "state": state}
 
 
 @app.post("/api/room/reset")
@@ -709,7 +783,7 @@ async def reset_room(req: ResetRequest):
         conn.execute("DELETE FROM shots WHERE room_code = ?", (code,))
         conn.execute("DELETE FROM logs WHERE room_code = ?", (code,))
         conn.execute(
-            "UPDATE rooms SET phase = 'lobby', current_turn = NULL, winner = NULL WHERE room_code = ?",
+            "UPDATE rooms SET phase = 'lobby', current_turn = NULL, winner = NULL, turn_deadline_ts = NULL WHERE room_code = ?",
             (code,),
         )
         conn.execute(
