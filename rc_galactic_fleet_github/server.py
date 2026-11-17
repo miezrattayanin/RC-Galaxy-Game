@@ -44,7 +44,7 @@ REQUIRED_SHIPS = {
 TOTAL_SHIP_CELLS = sum(REQUIRED_SHIPS.values())  # 12
 INITIAL_BULLETS = 5
 GRID_SIZE = 8
-TURN_SECONDS = 10.0
+TURN_SECONDS = 15.0
 
 app = FastAPI(title="RC BEYOND TOGETHER: GALACTIC FLEET")
 app.add_middleware(
@@ -186,7 +186,49 @@ def coord_label(r: int, c: int) -> str:
     return f"{chr(65 + c)}{r + 1}"
 
 
-def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: Optional[str] = None) -> dict:
+def compute_rankings(conn: sqlite3.Connection, code: str) -> List[dict]:
+    state = build_state_payload(conn, code, None, include_rankings=False)
+    participating = [t for t in state["teams"].values() if t["confirmed"]]
+    participating.sort(
+        key=lambda t: (t["remaining_cells"], t["hit_count"], t["remaining_ships"]),
+        reverse=True,
+    )
+    return [
+        {
+            "rank": idx + 1,
+            "team_id": t["team_id"],
+            "name": t["name"],
+            "remaining_cells": t["remaining_cells"],
+            "remaining_ships": t["remaining_ships"],
+            "hit_count": t["hit_count"],
+            "eliminated": t["eliminated"],
+        }
+        for idx, t in enumerate(participating[:3])
+    ]
+
+
+def check_bullets_exhausted(conn: sqlite3.Connection, code: str, now: str) -> bool:
+    alive_with_bullets = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM teams WHERE room_code = ? AND eliminated = 0 AND bullets > 0",
+        (code,),
+    ).fetchone()["cnt"]
+    if alive_with_bullets > 0:
+        return False
+    rankings = compute_rankings(conn, code)
+    top_id = rankings[0]["team_id"] if rankings else None
+    conn.execute(
+        "UPDATE rooms SET phase = 'finished', current_turn = NULL, winner = ?, turn_deadline_ts = NULL WHERE room_code = ?",
+        (top_id, code),
+    )
+    top_name = TEAM_META[top_id]["name"] if top_id else "-"
+    conn.execute(
+        "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'win', ?, ?)",
+        (code, f"🏁 กระสุนหมดทุกทีมแล้ว! ตัดสินจากพื้นที่ยานคงเหลือ — อันดับ 1: {top_name}", top_id, now),
+    )
+    return True
+
+
+def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: Optional[str] = None, include_rankings: bool = True) -> dict:
     room = ensure_room(conn, room_code)
     teams_rows = conn.execute(
         "SELECT * FROM teams WHERE room_code = ?", (room_code,)
@@ -207,10 +249,13 @@ def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: 
                 viewer_team = tid
                 break
 
-    # Compute hits per target team
+    # Compute hits per target team & hit_count per shooter team
     hits_by_target: Dict[str, List[dict]] = {tid: [] for tid in TEAM_ORDER}
     hit_coords_by_target: Dict[str, set] = {tid: set() for tid in TEAM_ORDER}
+    hit_count_by_shooter: Dict[str, int] = {tid: 0 for tid in TEAM_ORDER}
     for s in shots_rows:
+        if s["is_hit"] and s["shooter_team"] in hit_count_by_shooter:
+            hit_count_by_shooter[s["shooter_team"]] += 1
         hits_by_target[s["target_team"]].append(
             {
                 "row": s["row_idx"],
@@ -259,6 +304,7 @@ def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: 
             "player_name": t["player_name"] or "",
             "confirmed": bool(t["confirmed"]),
             "bullets": t["bullets"],
+            "hit_count": hit_count_by_shooter[tid],
             "eliminated": bool(t["eliminated"]),
             "last_target_team": t["last_target_team"],
             "remaining_cells": remaining_cells,
@@ -268,12 +314,33 @@ def build_state_payload(conn: sqlite3.Connection, room_code: str, viewer_token: 
             "sunk_ships": sunk_ships_public,
         }
 
+    rankings = []
+    if include_rankings and room["phase"] == "finished":
+        participating = [t for t in teams_payload.values() if t["confirmed"]]
+        participating.sort(
+            key=lambda t: (t["remaining_cells"], t["hit_count"], t["remaining_ships"]),
+            reverse=True,
+        )
+        rankings = [
+            {
+                "rank": idx + 1,
+                "team_id": t["team_id"],
+                "name": t["name"],
+                "remaining_cells": t["remaining_cells"],
+                "remaining_ships": t["remaining_ships"],
+                "hit_count": t["hit_count"],
+                "eliminated": t["eliminated"],
+            }
+            for idx, t in enumerate(participating[:3])
+        ]
+
     return {
         "room_code": room["room_code"],
         "phase": room["phase"],
         "current_turn": room["current_turn"],
         "turn_remaining_sec": max(0.0, round((room["turn_deadline_ts"] or 0) - time.time(), 1)) if room["phase"] == "battle" and room["turn_deadline_ts"] else 0.0,
         "winner": room["winner"],
+        "rankings": rankings,
         "viewer_team": viewer_team,
         "teams": teams_payload,
         "team_order": TEAM_ORDER,
@@ -643,11 +710,12 @@ async def fire_shot(req: FireRequest):
                 (code, f"🏆 {TEAM_META[winner_id]['name']} เป็นผู้ชนะแห่ง GALACTIC FLEET!", winner_id, now),
             )
         else:
-            next_turn = advance_turn(conn, code, req.team_id)
-            conn.execute(
-                "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
-                (next_turn, time.time() + TURN_SECONDS, code),
-            )
+            if not check_bullets_exhausted(conn, code, now):
+                next_turn = advance_turn(conn, code, req.team_id)
+                conn.execute(
+                    "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+                    (next_turn, time.time() + TURN_SECONDS, code),
+                )
 
         state = build_state_payload(conn, code, req.player_token)
 
@@ -679,11 +747,12 @@ async def skip_turn(req: SkipRequest):
             raise HTTPException(status_code=400, detail="คุณยังมีกระสุนเหลืออยู่ ไม่สามารถข้ามเทิร์นได้")
 
         now = datetime.utcnow().isoformat()
-        next_turn = advance_turn(conn, code, req.team_id)
-        conn.execute(
-            "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
-            (next_turn, time.time() + TURN_SECONDS, code),
-        )
+        if not check_bullets_exhausted(conn, code, now):
+            next_turn = advance_turn(conn, code, req.team_id)
+            conn.execute(
+                "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+                (next_turn, time.time() + TURN_SECONDS, code),
+            )
         conn.execute(
             "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'skip', ?, ?)",
             (code, f"{TEAM_META[req.team_id]['name']} กระสุนหมด — ข้ามเทิร์น", req.team_id, now),
@@ -759,13 +828,14 @@ async def handle_timeout(req: TimeoutRequest):
                 )
                 conn.execute(
                     "INSERT INTO logs (room_code, message, log_type, shooter_team, created_at) VALUES (?, ?, 'skip', ?, ?)",
-                    (code, f"⏰ {TEAM_META[cur_team]['name']} หมดเวลา 10 วินาที! เสียกระสุน 1 นัด", cur_team, now),
+                    (code, f"⏰ {TEAM_META[cur_team]['name']} หมดเวลา 15 วินาที! เสียกระสุน 1 นัด", cur_team, now),
                 )
-                next_turn = advance_turn(conn, code, cur_team)
-                conn.execute(
-                    "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
-                    (next_turn, time.time() + TURN_SECONDS, code),
-                )
+                if not check_bullets_exhausted(conn, code, now):
+                    next_turn = advance_turn(conn, code, cur_team)
+                    conn.execute(
+                        "UPDATE rooms SET current_turn = ?, turn_deadline_ts = ? WHERE room_code = ?",
+                        (next_turn, time.time() + TURN_SECONDS, code),
+                    )
                 changed = True
         state = build_state_payload(conn, code, None)
 
