@@ -671,7 +671,11 @@
       winnerCelebrated: false,
       lastClickCoords: null,
       turnDeadlineMs: 0,
-      timeoutSentForTurn: null
+      timeoutSentForTurn: null,
+      lastAnnouncedTurn: null,
+      showTurnSplash: false,
+      turnSplashTimer: null,
+      showHostRules: false
     };
 
     // --- Random Fleet Generator ---
@@ -723,6 +727,7 @@
             player_name: '',
             confirmed: false,
             bullets: 5,
+            hit_count: 0,
             eliminated: false,
             last_target_team: null,
             remaining_cells: 11,
@@ -753,12 +758,27 @@
             ships: isOwner ? t.ships : []
           };
         }
+        let rankings = [];
+        if (this.db.phase === 'finished') {
+          const participating = Object.values(teamsOut).filter(t => t.confirmed);
+          participating.sort((a, b) => (b.remaining_cells - a.remaining_cells) || ((b.hit_count || 0) - (a.hit_count || 0)) || (b.remaining_ships - a.remaining_ships));
+          rankings = participating.slice(0, 3).map((t, idx) => ({
+            rank: idx + 1,
+            team_id: t.team_id,
+            name: t.name,
+            remaining_cells: t.remaining_cells,
+            remaining_ships: t.remaining_ships,
+            hit_count: t.hit_count || 0,
+            eliminated: t.eliminated
+          }));
+        }
         return {
           room_code: this.db.room_code,
           phase: this.db.phase,
           current_turn: this.db.current_turn,
           turn_remaining_sec: this.db.phase === 'battle' && this.db.turn_deadline_ms ? Math.max(0, Number(((this.db.turn_deadline_ms - Date.now()) / 1000).toFixed(1))) : 0,
           winner: this.db.winner,
+          rankings,
           viewer_team: viewerTeam,
           teams: teamsOut,
           team_order: TEAM_ORDER,
@@ -804,7 +824,7 @@
         });
         this.db.phase = 'battle';
         this.db.current_turn = confirmedIds[0];
-        this.db.turn_deadline_ms = Date.now() + 10000;
+        this.db.turn_deadline_ms = Date.now() + 15000;
         this.db.logs.unshift({ id: Date.now() + 2, message: `🚀 Host กดเริ่มเกมแล้ว (${confirmedIds.length} ทีม)! เทิร์นแรก: ${this.db.teams[confirmedIds[0]].name}`, type: 'system' });
         this.scheduleBotTurnIfNeeded();
         return this.getPublicState(appState.myTeamId);
@@ -813,7 +833,7 @@
         if (this.db.phase !== 'battle' || !this.db.current_turn) return this.getPublicState(appState.myTeamId);
         const cur = this.db.teams[this.db.current_turn];
         cur.bullets = Math.max(0, cur.bullets - 1);
-        this.db.logs.unshift({ id: Date.now(), message: `⏰ ${cur.name} หมดเวลา 10 วินาที! เสียกระสุน 1 นัด`, type: 'skip', shooter_team: cur.team_id });
+        this.db.logs.unshift({ id: Date.now(), message: `⏰ ${cur.name} หมดเวลา 15 วินาที! เสียกระสุน 1 นัด`, type: 'skip', shooter_team: cur.team_id });
         this.advanceTurn(cur.team_id);
         return this.getPublicState(appState.myTeamId);
       },
@@ -840,6 +860,7 @@
         target.shots_received.push({ row, col, coord, is_hit: isHit, shooter_team: shooterId, ship_sunk: false });
 
         if (isHit) {
+          shooter.hit_count = (shooter.hit_count || 0) + 1;
           const hitSet = new Set(target.shots_received.filter(s => s.is_hit).map(s => `${s.row},${s.col}`));
           if (hitShip.cells.every(c => hitSet.has(`${c.row},${c.col}`))) {
             shipSunk = true;
@@ -884,13 +905,26 @@
         this.advanceTurn(teamId);
         return this.getPublicState(appState.myTeamId);
       },
+      checkBulletsExhausted() {
+        const aliveWithBullets = TEAM_ORDER.filter(id => !this.db.teams[id].eliminated && this.db.teams[id].bullets > 0);
+        if (aliveWithBullets.length > 0) return false;
+        const pub = this.getPublicState(appState.myTeamId);
+        const participating = Object.values(pub.teams).filter(t => t.confirmed);
+        participating.sort((a, b) => (b.remaining_cells - a.remaining_cells) || ((b.hit_count || 0) - (a.hit_count || 0)) || (b.remaining_ships - a.remaining_ships));
+        this.db.phase = 'finished';
+        this.db.current_turn = null;
+        this.db.winner = participating[0] ? participating[0].team_id : null;
+        this.db.logs.unshift({ id: Date.now() + 3, message: `🏁 กระสุนหมดทุกทีมแล้ว! ตัดสินจากพื้นที่ยานคงเหลือ — อันดับ 1: ${participating[0]?.name || '-'}`, type: 'win' });
+        return true;
+      },
       advanceTurn(currentId) {
+        if (this.checkBulletsExhausted()) return;
         const idx = TEAM_ORDER.indexOf(currentId);
         for (let off = 1; off <= TEAM_ORDER.length; off++) {
           const cand = TEAM_ORDER[(idx + off) % TEAM_ORDER.length];
           if (!this.db.teams[cand].eliminated) {
             this.db.current_turn = cand;
-            this.db.turn_deadline_ms = Date.now() + 10000;
+            this.db.turn_deadline_ms = Date.now() + 15000;
             break;
           }
         }
@@ -967,6 +1001,14 @@
           appState.mode = 'live';
           await fetchRoomState();
           connectWebSocket();
+          setInterval(() => {
+            if (appState.mode === 'live') fetchRoomState();
+          }, 2500);
+          setInterval(() => {
+            if (appState.ws && appState.ws.readyState === WebSocket.OPEN) {
+              try { appState.ws.send('ping'); } catch (e) {}
+            }
+          }, 20000);
           return;
         }
       } catch (e) {}
@@ -1273,7 +1315,7 @@
 
     function syncTurnDeadline(st) {
       if (st && st.phase === 'battle') {
-        const rem = typeof st.turn_remaining_sec === 'number' ? st.turn_remaining_sec : 10;
+        const rem = typeof st.turn_remaining_sec === 'number' ? st.turn_remaining_sec : 15;
         appState.turnDeadlineMs = Date.now() + rem * 1000;
         appState.timeoutSentForTurn = null;
       } else {
@@ -1729,10 +1771,10 @@
 
             <div class="w-full md:w-auto flex items-center gap-2.5 flex-wrap">
               <div id="turnTimerBadge" class="px-3.5 py-2 rounded-xl bg-slate-900/90 border border-sky-400/50 font-orbitron font-black text-sm text-sky-300 flex items-center gap-1.5">
-                ⏱️ <span id="turnTimerText">10</span>s
+                ⏱️ <span id="turnTimerText">15</span>s
               </div>
-              <div class="flex-1 md:flex-none px-4 py-2 rounded-xl font-bold text-sm text-center ${isMyTurn ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 pulse-turn shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-slate-800/90 text-slate-200 border border-slate-700'}">
-                ${isMyTurn ? '🎯 ถึงเทิร์นของคุณ! เลือกเป้าหมายแล้วยิงเลย' : `⏳ กำลังรอทีม ${turnCfg ? turnCfg.name : '...'}`}
+              <div class="flex-1 md:flex-none px-4 py-2 rounded-xl font-bold text-sm text-center ${isMyTurn ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 pulse-turn shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'text-white border'}" style="${isMyTurn ? '' : `background:${turnCfg ? turnCfg.badgeBg : 'rgba(30,41,59,0.9)'}; border-color:${turnCfg ? turnCfg.border : '#334155'}`}">
+                ${isMyTurn ? '🎯 ถึงเทิร์นของคุณ! เลือกเป้าหมายแล้วยิงเลย (15 วิ)' : `⏳ อยู่ระหว่างเทิร์นของทีม ${turnCfg ? turnCfg.name : '...'} — เตรียมพร้อม!`}
               </div>
               ${isMyTurn && myTeam.bullets <= 0 ? `
                 <button id="skipTurnBtn" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition shadow">
@@ -1764,7 +1806,7 @@
                   </div>
                   <div class="flex items-center justify-between text-[11px] text-slate-200">
                     <span>🚀 ${t.remaining_ships}/5 (${t.remaining_cells} ช่อง)</span>
-                    <span>🔫 ${t.bullets}${isRepeatLocked ? ' • พักยิง' : ''}</span>
+                    <span>🔫 ${t.bullets} • 🎯 ${t.hit_count || 0}${isRepeatLocked ? ' • พักยิง' : ''}</span>
                   </div>
                 </div>
               `;
@@ -1859,16 +1901,21 @@
                 </div>
                 ${(st.phase === 'lobby' || st.phase === 'placement') ? (() => {
                   const readyCnt = TEAM_ORDER.filter(id => st.teams[id].confirmed).length;
-                  return `<button id="hostStartBtn" ${readyCnt < 2 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg ${readyCnt >= 2 ? 'bg-gradient-to-r from-emerald-400 to-sky-400 text-slate-950 hover:brightness-110' : 'bg-slate-800 text-slate-400 cursor-not-allowed'}">
-                    🚀 Start Game (พร้อม ${readyCnt}/5 ทีม)
-                  </button>`;
+                  return `
+                    <button id="hostRulesBtn" class="px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-orange-500 to-amber-500 text-slate-950 hover:brightness-110 transition shadow-lg">
+                      📖 เตรียมพร้อม / อธิบายกติกา
+                    </button>
+                    <button id="hostStartBtn" ${readyCnt < 2 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg ${readyCnt >= 2 ? 'bg-gradient-to-r from-emerald-400 to-sky-400 text-slate-950 hover:brightness-110' : 'bg-slate-800 text-slate-400 cursor-not-allowed'}">
+                      🚀 Start Game (พร้อม ${readyCnt}/5 ทีม)
+                    </button>
+                  `;
                 })() : ''}
                 ${st.current_turn ? `
                   <div class="px-4 py-2 rounded-xl font-orbitron font-bold text-sm text-slate-950 bg-gradient-to-r from-emerald-400 to-cyan-400 shadow">
                     🎯 เทิร์นปัจจุบัน: ${TEAMS_CONFIG[st.current_turn].name}
                   </div>
                   <div id="hostTurnTimerBadge" class="px-4 py-2 rounded-xl bg-slate-900/90 border border-sky-400/60 font-orbitron font-black text-base text-sky-300">
-                    ⏱️ <span id="hostTurnTimerText">10</span>s
+                    ⏱️ <span id="hostTurnTimerText">15</span>s
                   </div>
                 ` : ''}
               </div>
@@ -1893,8 +1940,8 @@
                   <div>
                     <div class="flex items-center justify-between mb-3">
                       ${planetSvg(tid, 44)}
-                      <span class="px-2.5 py-1 rounded-full text-xs font-bold ${t.eliminated ? 'bg-rose-600 text-white' : (t.confirmed ? 'bg-emerald-500/25 text-emerald-200' : (t.claimed ? 'bg-amber-500/25 text-amber-200' : 'bg-slate-800 text-slate-400'))}">
-                        ${t.eliminated ? 'ถูกทำลาย' : (t.confirmed ? 'พร้อมรบ' : (t.claimed ? 'เลือกแล้ว' : 'รอเข้าร่วม'))}
+                      <span class="px-2.5 py-1 rounded-full text-xs font-bold ${t.eliminated ? 'bg-rose-600 text-white' : (isTurn ? 'bg-white text-slate-950 animate-pulse' : (t.confirmed ? 'bg-emerald-500/25 text-emerald-200' : (t.claimed ? 'bg-amber-500/25 text-amber-200' : 'bg-slate-800 text-slate-400')))}">
+                        ${t.eliminated ? 'ถูกทำลาย' : (isTurn ? '🎯 กำลังยิง!' : (t.confirmed ? 'พร้อมรบ' : (t.claimed ? 'กำลังวางยาน' : 'รอเข้าร่วม')))}
                       </span>
                     </div>
                     <div class="font-orbitron font-extrabold text-base text-white">${cfg.name}</div>
@@ -1907,8 +1954,12 @@
                         <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%; background:${cfg.accent}"></div>
                       </div>
                       <div class="flex justify-between text-xs text-slate-200 pt-1">
-                        <span>ช่องยานคงเหลือ: <strong>${t.remaining_cells}/11</strong></span>
+                        <span>ช่องยาน: <strong>${t.remaining_cells}/11</strong></span>
                         <span>🔫 <strong class="text-amber-300">${t.bullets}</strong></span>
+                      </div>
+                      <div class="flex justify-between items-center text-xs pt-1 border-t border-white/10">
+                        <span class="text-slate-300">แต้มยิงโดน</span>
+                        <span class="px-2 py-0.5 rounded-md bg-rose-500/25 border border-rose-400/40 text-rose-200 font-bold">🎯 ${t.hit_count || 0} ครั้ง</span>
                       </div>
                     </div>
                   </div>
@@ -1930,6 +1981,91 @@
       `;
     }
 
+    function checkTurnAnnouncement(st) {
+      if (!st || st.phase !== 'battle' || !st.current_turn || appState.isHostView || !appState.myTeamId) return;
+      if (appState.lastAnnouncedTurn !== st.current_turn) {
+        appState.lastAnnouncedTurn = st.current_turn;
+        if (st.current_turn === appState.myTeamId && !st.teams[appState.myTeamId].eliminated) {
+          appState.showTurnSplash = true;
+          SFX.play('place');
+          clearTimeout(appState.turnSplashTimer);
+          appState.turnSplashTimer = setTimeout(() => {
+            appState.showTurnSplash = false;
+            render();
+          }, 2600);
+        } else {
+          appState.showTurnSplash = false;
+        }
+      }
+    }
+
+    function renderHostRulesModal(st) {
+      if (!appState.showHostRules || !appState.isHostView) return '';
+      const readyCnt = TEAM_ORDER.filter(id => st.teams[id].confirmed).length;
+      return `
+        <div id="hostRulesModal" class="fixed inset-0 z-[58] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div class="glass-panel rounded-3xl max-w-3xl w-full p-6 sm:p-8 border border-sky-400/40 shadow-[0_0_50px_rgba(14,165,233,0.3)] my-auto">
+            <div class="flex items-center justify-between gap-3 mb-5">
+              <div>
+                <div class="text-xs font-orbitron font-bold tracking-[0.2em] text-amber-300">MISSION BRIEFING</div>
+                <h2 class="text-2xl sm:text-3xl font-black text-white">📖 กติกาการเล่น GALACTIC FLEET</h2>
+              </div>
+              <div class="px-4 py-2 rounded-xl bg-sky-500/20 border border-sky-400/50 text-sky-200 font-bold text-sm">
+                พร้อมแล้ว ${readyCnt} / 5 ทีม
+              </div>
+            </div>
+
+            <div class="grid sm:grid-cols-2 gap-3.5 text-sm mb-6">
+              <div class="p-4 rounded-2xl bg-slate-900/80 border border-sky-500/30">
+                <div class="font-bold text-sky-300 text-base mb-1">🛸 1. จัดทัพยานอวกาศ 5 ลำ (11 ช่อง)</div>
+                <p class="text-slate-200 leading-relaxed">วางยาน Flagship (4), Cruiser (3), Scout (2) และ Fighter (1×2 ลำ) บนกระดาน 8×8 แล้วกดยืนยันกองยาน</p>
+              </div>
+              <div class="p-4 rounded-2xl bg-slate-900/80 border border-orange-500/30">
+                <div class="font-bold text-orange-300 text-base mb-1">🔫 2. กระสุนเริ่มต้น 5 นัด</div>
+                <p class="text-slate-200 leading-relaxed"><strong>ยิงโดน:</strong> กระสุนคงเดิม! • <strong>ยิงพลาด:</strong> เสียกระสุน 1 นัด และทีมเป้าหมายได้กระสุนเพิ่ม +1 นัด</p>
+              </div>
+              <div class="p-4 rounded-2xl bg-slate-900/80 border border-emerald-500/30">
+                <div class="font-bold text-emerald-300 text-base mb-1">🎯 3. ห้ามยิงสีเดิมซ้ำติดกัน</div>
+                <p class="text-slate-200 leading-relaxed">ในรอบถัดไปต้องเลือกยิงทีมอื่น เพื่อให้การต่อสู้กระจายทั่วถึง (ยกเว้นเหลือคู่แข่งทีมเดียว)</p>
+              </div>
+              <div class="p-4 rounded-2xl bg-slate-900/80 border border-rose-500/30">
+                <div class="font-bold text-rose-300 text-base mb-1">⏱️ 4. จับเวลา 15 วินาทีต่อเทิร์น</div>
+                <p class="text-slate-200 leading-relaxed">เมื่อขึ้นจอเต็ม <strong>“ถึงตาของคุณแล้ว!”</strong> ต้องรีบยิงภายใน 15 วิ หากหมดเวลาจะเสียกระสุน 1 นัดทันที</p>
+              </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button id="closeHostRulesBtn" class="w-full sm:w-auto px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm transition">
+                ✕ ปิดหน้ากติกา (ดู QR Code)
+              </button>
+              <button id="startFromRulesBtn" ${readyCnt < 2 ? 'disabled' : ''} class="w-full sm:w-auto px-7 py-3 rounded-xl font-extrabold text-sm transition shadow-lg ${readyCnt >= 2 ? 'bg-gradient-to-r from-emerald-400 to-sky-400 text-slate-950 hover:brightness-110' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}">
+                🚀 อธิบายเสร็จแล้ว — เริ่มเกมเลย! (${readyCnt}/5 ทีม)
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTurnSplashOverlay(st) {
+      if (!appState.showTurnSplash || st.phase !== 'battle' || st.current_turn !== appState.myTeamId) return '';
+      const cfg = TEAMS_CONFIG[appState.myTeamId];
+      return `
+        <div id="turnSplashOverlay" class="fixed inset-0 z-[55] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer">
+          <div class="glass-panel rounded-3xl max-w-md w-full p-8 text-center border-2 pulse-turn" style="border-color:${cfg.accent}; box-shadow: 0 0 70px ${cfg.glow}; background:${cfg.bgGrad}">
+            <div class="flex justify-center mb-4">${planetSvg(cfg.id, 84)}</div>
+            <div class="text-xs font-orbitron font-bold tracking-[0.25em] text-amber-300 mb-1">YOUR TURN</div>
+            <h2 class="text-3xl sm:text-4xl font-black text-white mb-2">🎯 ถึงตาของคุณแล้ว!</h2>
+            <div class="font-orbitron text-xl font-extrabold mb-3" style="color:${cfg.accent}">${cfg.name}</div>
+            <p class="text-sm text-slate-200 mb-6">เตรียมเล็งเป้าหมายและยิงภายใน <strong>15 วินาที</strong>!</p>
+            <button id="dismissTurnSplashBtn" class="px-8 py-3 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-400 text-slate-950 font-extrabold text-base shadow-xl hover:brightness-110 transition">
+              🚀 ยิงเลย!
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
     function renderWinnerOverlay(st) {
       if (st.phase !== 'finished' || !st.winner) return '';
       const wCfg = TEAMS_CONFIG[st.winner];
@@ -1946,7 +2082,26 @@
             <div class="flex justify-center mb-4 float-slow">${planetSvg(wCfg.id, 92)}</div>
             <div class="text-xs font-orbitron font-bold tracking-[0.25em] text-amber-300 mb-1">GALACTIC CHAMPION</div>
             <h2 class="font-orbitron text-3xl sm:text-4xl font-black text-white mb-2">${wCfg.name}</h2>
-            <p class="text-base text-slate-200 mb-6">🏆 ผู้พิชิตจักรวาล RC BEYOND TOGETHER: GALACTIC FLEET!</p>
+            <p class="text-sm text-slate-200 mb-4">🏆 สรุปผลอันดับ 1–3 (จัดอันดับจากพื้นที่ยานคงเหลือ)</p>
+            <div class="space-y-2 text-left mb-6">
+              ${((st.rankings && st.rankings.length) ? st.rankings : [{ rank: 1, team_id: st.winner, name: wCfg.name, remaining_cells: st.teams[st.winner].remaining_cells, hit_count: st.teams[st.winner].hit_count || 0 }]).map((r, i) => {
+                const rCfg = TEAMS_CONFIG[r.team_id];
+                const medals = ['🥇 อันดับ 1', '🥈 อันดับ 2', '🥉 อันดับ 3'];
+                return `
+                  <div class="flex items-center justify-between gap-2 p-2.5 rounded-2xl border ${i === 0 ? 'bg-amber-500/15 border-amber-400/60' : 'bg-slate-900/75 border-slate-700/80'}">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="font-bold text-xs sm:text-sm whitespace-nowrap ${i === 0 ? 'text-amber-300' : 'text-slate-200'}">${medals[i] || `#${r.rank}`}</span>
+                      ${planetSvg(r.team_id, 24)}
+                      <span class="font-orbitron font-bold text-xs sm:text-sm truncate" style="color:${rCfg.accent}">${r.name}</span>
+                    </div>
+                    <div class="flex items-center gap-2.5 text-xs whitespace-nowrap">
+                      <span class="text-sky-200 font-semibold">🛸 เหลือ <strong>${r.remaining_cells}/11</strong> ช่อง</span>
+                      <span class="text-rose-200 font-semibold">🎯 ${r.hit_count || 0}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
             <div class="flex flex-col sm:flex-row gap-3 justify-center">
               <button id="winnerResetBtn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-extrabold text-sm shadow-lg hover:brightness-110 transition">
                 🔄 เล่นใหม่อีกครั้ง (Reset Game)
@@ -1990,6 +2145,7 @@
     function render() {
       const st = appState.serverState;
       const root = document.getElementById('app');
+      checkTurnAnnouncement(st);
       if (!st) {
         root.innerHTML = `<div class="flex-1 flex items-center justify-center text-cyan-300 font-bold">กำลังเชื่อมต่อระบบอวกาศ...</div>`;
         return;
@@ -2006,7 +2162,7 @@
         bodyHtml = renderBattleView(st);
       }
 
-      root.innerHTML = renderTopNav() + bodyHtml + renderWinnerOverlay(st);
+      root.innerHTML = renderTopNav() + bodyHtml + renderHostRulesModal(st) + renderTurnSplashOverlay(st) + renderWinnerOverlay(st);
       bindEvents(st);
       if (appState.isHostView) drawHostQr(st.room_code);
     }
@@ -2024,6 +2180,27 @@
       document.getElementById('toggleHostBtn')?.addEventListener('click', () => {
         appState.isHostView = !appState.isHostView;
         render();
+      });
+      document.getElementById('turnSplashOverlay')?.addEventListener('click', () => {
+        appState.showTurnSplash = false;
+        render();
+      });
+      document.getElementById('dismissTurnSplashBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        appState.showTurnSplash = false;
+        render();
+      });
+      document.getElementById('hostRulesBtn')?.addEventListener('click', () => {
+        appState.showHostRules = true;
+        render();
+      });
+      document.getElementById('closeHostRulesBtn')?.addEventListener('click', () => {
+        appState.showHostRules = false;
+        render();
+      });
+      document.getElementById('startFromRulesBtn')?.addEventListener('click', () => {
+        appState.showHostRules = false;
+        handleStartGame();
       });
       document.getElementById('hostStartBtn')?.addEventListener('click', handleStartGame);
       document.getElementById('resetGameBtn')?.addEventListener('click', handleResetGame);
